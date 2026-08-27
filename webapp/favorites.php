@@ -127,7 +127,6 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
                 <td><?= htmlspecialchars(fav_format_it($r['created_at'] . ' UTC')) ?></td>
                 <td>
                     <a href="view.php?id=<?= (int) $r['event_id'] ?>" class="icon-link" title="Apri mappa traccia">🗺️</a>
-                    <a href="#" class="fav-remove" data-id="<?= (int) $r['event_id'] ?>" title="Rimuovi dai preferiti">✖</a>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -144,7 +143,7 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
 const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
 document.addEventListener('click', e => {
-    const el = e.target.closest('.fav-remove, .fav-btn');
+    const el = e.target.closest('.fav-btn');
     if (!el) return;
     e.preventDefault();
     const id = el.dataset.id;

@@ -23,4 +23,3 @@ a { color: #007BFF; text-decoration: none; }
 .fav-btn.is-fav { color: #f5b301; }
 .fav-btn:disabled { opacity: 0.4; cursor: default; }
 .fav-note { font-style: italic; color: #6c757d; }
-.fav-remove { color: #c0392b; font-weight: bold; }

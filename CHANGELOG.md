@@ -10,6 +10,8 @@
   azioni) e filtro "Solo preferiti" in `index.php`; token CSRF via sessione
   (`csrf.php`). `fav_ensure_schema()` sposta da parte un'eventuale vecchia
   tabella `favorites` a chiave `hex` (`favorites_legacy_hex`).
+  In `favorites.php` un solo comando di rimozione: la ⭐ a inizio riga
+  (rimossa la ✖ in coda).
 - `webapp/config.sample.php` + `fa_config()`: `db_path` e `milair_base_url`
   configurabili; il monitor legge il DB da `$FLIGHT_ANOM_DB` o da `../db/events.db`.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`.
