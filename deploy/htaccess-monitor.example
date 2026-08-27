@@ -1,0 +1,3 @@
+# Blocca ogni accesso HTTP alla cartella del monitor (codice del demone,
+# poligoni, lista aeroporti, virtualenv). Serve solo al processo Python.
+Require all denied

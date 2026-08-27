@@ -1,0 +1,22 @@
+# Configurazione locale
+config.php
+
+# Database e sidecar
+*.db
+*.db-shm
+*.db-wal
+
+# Credenziali Basic Auth
+.htpasswd
+
+# Poligono di copertura reale (usare polygons.example.json come base)
+monitor/polygons.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Sistema
+.DS_Store

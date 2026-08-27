@@ -1,0 +1,51 @@
+# Flight Anomaly Monitor - unit systemd del monitor ADS-B.
+# Copiare in /etc/systemd/system/flight-anom.service e adattare i percorsi/l'utente.
+#   sudo cp flight-anom.service.sample /etc/systemd/system/flight-anom.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now flight-anom
+
+[Unit]
+Description=Flight Anomaly Monitor (ADS-B)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flightanom
+Group=www-data
+WorkingDirectory=/opt/flight_anom/monitor
+# Il percorso del DB si risolve da solo a ../db/events.db rispetto allo script;
+# scommentare per forzarlo altrove:
+# Environment="FLIGHT_ANOM_DB=/var/lib/flight_anom/events.db"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/flight_anom/monitor/venv/bin/python3 /opt/flight_anom/monitor/flight_anom.py \
+    --polygons-file /opt/flight_anom/monitor/polygons.json \
+    --interval 60 \
+    --max-alt-ft 55000 \
+    --max-gs-kt 600 \
+    --max-vs-fpm 6000 \
+    --max-dgs-kts 200 \
+    --proximity-km 2.5 \
+    --prox_angle_deg 15.0 \
+    --prox_alt_diff_ft 400.0 \
+    --prox_gs_diff_kt 35.0 \
+    --anomaly-cooldown 600 \
+    --pattern-cooldown 900 \
+    --prox-cooldown 600 \
+    --loop-min-points 30 \
+    --loop-close-km 3.0 \
+    --loop-min-span-km 12.0 \
+    --loop-min-laps 4 \
+    --lawn-min-points 14 \
+    --lawn-heading-tol 15.0 \
+    --lawn-required-passes 6 \
+    --lawn-min-span-km 18.0 \
+    --mesh-min-points 50 \
+    --mesh-perp-tol 10.0 \
+    --mesh-min-crossings 8
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

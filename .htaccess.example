@@ -1,0 +1,31 @@
+# Flight Anomaly Monitor - .htaccess della root della webapp.
+# Copiare in .htaccess dove sono serviti i .php e adattare il percorso di AuthUserFile.
+#
+# Il portale non ha login applicativo: l'accesso e' protetto da HTTP Basic Auth
+# a livello di webserver (il browser reinvia le credenziali su ogni richiesta,
+# incluse le fetch() verso api/events.php e toggle_favorite.php).
+
+AuthType Basic
+AuthName "Flight Anomaly Monitor"
+# Generare con:  htpasswd -c -B /percorso/fuori/docroot/.htpasswd nomeutente
+AuthUserFile /percorso/fuori/docroot/.htpasswd
+Require valid-user
+
+# Nega comunque l'accesso diretto via HTTP a configurazione, database e dump SQL
+# (la webapp li legge dal filesystem, non via HTTP).
+<FilesMatch "\.(db|db-wal|db-shm|sqlite|sqlite3|sql)$">
+    Require all denied
+</FilesMatch>
+<Files "config.php">
+    Require all denied
+</Files>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "same-origin"
+    # 'unsafe-inline' necessario: il portale usa <script> inline, handler
+    # onclick/onsubmit e attributi style=. La mappa di view.php carica Leaflet
+    # da unpkg.com con SRI: le voci unpkg.com qui sotto coprono quel caso.
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
+</IfModule>

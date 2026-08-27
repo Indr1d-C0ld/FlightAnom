@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Esempio - riquadro sulla Toscana. Sostituire con il proprio poligono di copertura (GeoJSON Polygon/MultiPolygon, coordinate [lon, lat])."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [9.95, 42.55],
+            [12.35, 42.55],
+            [12.35, 44.45],
+            [9.95, 44.45],
+            [9.95, 42.55]
+          ]
+        ]
+      }
+    }
+  ]
+}

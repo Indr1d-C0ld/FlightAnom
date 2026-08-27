@@ -1,0 +1,61 @@
+#!/bin/bash
+# =============================================================================
+# Configurazione permessi per Flight Anomaly Monitor.
+# Copiare in setup_permissions.sh e adattare le variabili qui sotto.
+# Eseguire come root:  sudo bash setup_permissions.sh
+# =============================================================================
+set -e
+
+# --- Da adattare ------------------------------------------------------------
+PROJECT_DIR="${FLIGHT_ANOM_DIR:-/opt/flight_anom}"   # radice del deployment
+USER="${FLIGHT_ANOM_USER:-flightanom}"               # utente che esegue il monitor Python
+GROUP="${FLIGHT_ANOM_GROUP:-www-data}"               # gruppo del webserver
+# -------------------------------------------------------------------------------
+
+DB_DIR="$PROJECT_DIR/db"
+DB_FILE="$DB_DIR/events.db"
+MONITOR_DIR="$PROJECT_DIR/monitor"
+VENV_DIR="$MONITOR_DIR/venv"
+
+if [[ $EUID -ne 0 ]]; then
+   echo "Questo script deve essere eseguito come root (sudo)."
+   exit 1
+fi
+
+echo "=== Permessi per $PROJECT_DIR (utente=$USER gruppo=$GROUP) ==="
+
+mkdir -p "$DB_DIR" "$PROJECT_DIR/api" "$PROJECT_DIR/assets"
+
+if id -nG "$USER" | grep -qw "$GROUP"; then
+    echo "L'utente $USER e' gia' membro del gruppo $GROUP."
+else
+    usermod -a -G "$GROUP" "$USER"
+    echo "Aggiunto $USER al gruppo $GROUP."
+fi
+
+# Proprieta' di tutto il progetto (venv corretto dopo)
+chown -R "$USER:$GROUP" "$PROJECT_DIR"
+find "$PROJECT_DIR" -type d -exec chmod 755 {} \;
+find "$PROJECT_DIR" -type f -exec chmod 644 {} \;
+chmod +x "$MONITOR_DIR/flight_anom.py"
+
+# Database: scrivibile dall'utente del monitor, leggibile dal webserver.
+# setgid sulla dir db/ cosi' i sidecar WAL ereditano il gruppo.
+chmod 2775 "$DB_DIR"
+touch "$DB_FILE"
+chown "$USER:$GROUP" "$DB_FILE"
+chmod 664 "$DB_FILE"
+
+# Virtualenv: solo l'utente del monitor
+if [ -d "$VENV_DIR" ]; then
+    chown -R "$USER:$USER" "$VENV_DIR"
+    chmod -R 700 "$VENV_DIR"
+else
+    echo "Nota: $VENV_DIR non trovata. Crearla con:  python3 -m venv $VENV_DIR"
+fi
+
+# config.php della webapp: non leggibile via HTTP (vedi .htaccess.example) ma
+# leggibile dal processo PHP.
+[ -f "$PROJECT_DIR/config.php" ] && chmod 640 "$PROJECT_DIR/config.php" && chown "$USER:$GROUP" "$PROJECT_DIR/config.php"
+
+echo "=== Fatto. Riavviare il servizio:  sudo systemctl restart flight-anom ==="

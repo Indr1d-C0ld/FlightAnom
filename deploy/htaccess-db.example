@@ -1,0 +1,3 @@
+# Blocca ogni accesso HTTP alla cartella del database (WAL sidecar inclusi).
+# La webapp e il monitor leggono/scrivono il file dal filesystem, mai via HTTP.
+Require all denied
