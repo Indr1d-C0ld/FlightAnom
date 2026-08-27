@@ -113,14 +113,14 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec('PRAGMA busy_timeout=5000'); // attende invece di fallire con "database is locked"
 
-    // Preferiti: set di hex per evidenziare le righe e (se richiesto) filtrare
-    $fav_set = fav_hex_set($pdo);
+    // Preferiti: set di event_id per la stella e (se richiesto) per filtrare
+    $fav_set = fav_id_set($pdo);
     if ($only_fav) {
         if ($fav_set) {
             $ph = implode(',', array_fill(0, count($fav_set), '?'));
-            $where[] = "lower(hex) IN ($ph)";
-            foreach (array_keys($fav_set) as $h) {
-                $params[] = $h;
+            $where[] = "id IN ($ph)";
+            foreach (array_keys($fav_set) as $eid) {
+                $params[] = $eid;
             }
         } else {
             $where[] = "1 = 0"; // nessun preferito -> nessun risultato
@@ -296,14 +296,7 @@ function page_url($page) {
             <tr>
                 <td><?= htmlspecialchars(format_italian_datetime($ev['first_seen_utc'])) ?></td>
                 <td><?= htmlspecialchars($ev['event_type']) ?></td>
-                <?php $is_fav = $hex !== '' && isset($fav_set[strtolower($hex)]); ?>
                 <td>
-                    <?php if ($hex !== ''): ?>
-                        <button type="button" class="fav-btn<?= $is_fav ? ' is-fav' : '' ?>"
-                                data-hex="<?= htmlspecialchars(strtolower($hex)) ?>"
-                                aria-pressed="<?= $is_fav ? 'true' : 'false' ?>"
-                                title="<?= $is_fav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti' ?>"><?= $is_fav ? '⭐' : '☆' ?></button>
-                    <?php endif; ?>
                     <a href="https://www.flightdb.net/aircraft.php?modes=<?= urlencode($hex) ?>" target="_blank" title="Apri FlightDB per ICAO <?= htmlspecialchars($hex) ?>">
                         <?= htmlspecialchars($hex) ?>
                     </a>
@@ -323,7 +316,12 @@ function page_url($page) {
                     <?php endif; ?>
                 </td>
                 <td><?= htmlspecialchars($ev['note']) ?></td>
+                <?php $is_fav = isset($fav_set[(int) $ev['id']]); ?>
                 <td class="actions">
+                    <button type="button" class="fav-btn<?= $is_fav ? ' is-fav' : '' ?>"
+                            data-id="<?= (int) $ev['id'] ?>"
+                            aria-pressed="<?= $is_fav ? 'true' : 'false' ?>"
+                            title="<?= $is_fav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti' ?>"><?= $is_fav ? '⭐' : '☆' ?></button>
                     <a href="view.php?id=<?= $ev['id'] ?>" title="Apri mappa traccia" class="icon-link">🗺️</a>
                     <?php if ($flightradar24_url): ?>
                         <a href="<?= htmlspecialchars($flightradar24_url) ?>" target="_blank" title="Apri Flightradar24 per <?= htmlspecialchars($callsign) ?>" class="icon-link">✈️</a>
@@ -394,28 +392,25 @@ function fallbackCopy(text) {
     document.body.removeChild(textarea);
 }
 
-// --- Preferiti: toggle ⭐ ---
+// --- Preferiti: toggle ⭐ per evento ---
 const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
 document.addEventListener('click', e => {
     const btn = e.target.closest('.fav-btn');
     if (!btn) return;
-    const hex = btn.dataset.hex;
+    const id = btn.dataset.id;
     btn.disabled = true;
     fetch('toggle_favorite.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({hex: hex, action: 'toggle', csrf_token: CSRF_TOKEN})
+        body: new URLSearchParams({id: id, action: 'toggle', csrf_token: CSRF_TOKEN})
     })
     .then(r => r.json())
     .then(d => {
         if (!d.ok) { alert('Errore: ' + (d.error || 'operazione non riuscita')); return; }
-        // aggiorna ogni pulsante ⭐ per lo stesso hex nella pagina
-        document.querySelectorAll('.fav-btn[data-hex="' + hex + '"]').forEach(b => {
-            b.classList.toggle('is-fav', d.favorited);
-            b.textContent = d.favorited ? '⭐' : '☆';
-            b.setAttribute('aria-pressed', d.favorited ? 'true' : 'false');
-            b.title = d.favorited ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti';
-        });
+        btn.classList.toggle('is-fav', d.favorited);
+        btn.textContent = d.favorited ? '⭐' : '☆';
+        btn.setAttribute('aria-pressed', d.favorited ? 'true' : 'false');
+        btn.title = d.favorited ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti';
     })
     .catch(() => alert('Errore di rete.'))
     .finally(() => { btn.disabled = false; });

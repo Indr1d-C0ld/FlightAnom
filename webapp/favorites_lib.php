@@ -1,8 +1,8 @@
 <?php
 // favorites_lib.php - Schema e accesso alla tabella dei preferiti.
-// Modello: watchlist PER-AEROMOBILE (chiave hex), una nota libera per hex.
-// I preferiti vivono nello stesso db/events.db; la tabella e' creata pigramente
-// dai writer (toggle_favorite.php, edit_favorite.php).
+// Modello: preferiti PER-EVENTO (chiave event_id -> events.id), con nota
+// annotabile per evento. I preferiti vivono nello stesso db/events.db; la
+// tabella e' creata pigramente dai writer (toggle_favorite.php, edit_favorite.php).
 
 /**
  * Configurazione condivisa da tutte le pagine PHP.
@@ -42,33 +42,44 @@ function fav_open(bool $writable = false): PDO {
 }
 
 function fav_ensure_schema(PDO $pdo): void {
+    // Migrazione dalla vecchia tabella per-aeromobile (chiave hex): messa da
+    // parte, non cancellata. La si puo' rimuovere a mano con DROP quando serve.
+    $legacy = $pdo->query(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='favorites'"
+    )->fetchColumn();
+    if ($legacy) {
+        $cols = $pdo->query("PRAGMA table_info(favorites)")->fetchAll();
+        $names = array_column($cols, 'name');
+        if (in_array('hex', $names, true) && !in_array('event_id', $names, true)) {
+            $pdo->exec("ALTER TABLE favorites RENAME TO favorites_legacy_hex");
+        }
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS favorites (
-        hex TEXT PRIMARY KEY,
-        note TEXT,
+        event_id   INTEGER PRIMARY KEY,
+        note       TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )");
 }
 
 function fav_table_exists(PDO $pdo): bool {
-    return (bool)$pdo->query(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='favorites'"
-    )->fetchColumn();
+    $cols = $pdo->query("PRAGMA table_info(favorites)")->fetchAll();
+    return in_array('event_id', array_column($cols, 'name'), true);
 }
 
-/** Set dei preferiti come mappa hex(minuscolo) => true. [] se la tabella non esiste. */
-function fav_hex_set(PDO $pdo): array {
+/** Set dei preferiti come mappa event_id(int) => true. [] se la tabella non esiste. */
+function fav_id_set(PDO $pdo): array {
     if (!fav_table_exists($pdo)) {
         return [];
     }
     $out = [];
-    foreach ($pdo->query("SELECT hex FROM favorites") as $r) {
-        $out[strtolower((string)$r['hex'])] = true;
+    foreach ($pdo->query("SELECT event_id FROM favorites") as $r) {
+        $out[(int) $r['event_id']] = true;
     }
     return $out;
 }
 
-function fav_valid_hex(string $hex): bool {
-    return (bool)preg_match('/^[0-9a-f]{6,8}$/', $hex);
+function fav_valid_id($id): bool {
+    return ctype_digit((string) $id) && (int) $id > 0;
 }
 
 /** Data UTC memorizzata ("Y-m-d H:i:s UTC") -> "d/m/Y H:i:s" ora italiana. */

@@ -1,6 +1,6 @@
 <?php
-// toggle_favorite.php - Aggiunge/rimuove un aeromobile (hex) dai preferiti.
-// POST: hex, action=add|remove|toggle, csrf_token. Risposta JSON.
+// toggle_favorite.php - Aggiunge/rimuove un EVENTO dai preferiti.
+// POST: id (events.id), action=add|remove|toggle, csrf_token. Risposta JSON.
 ini_set('display_errors', '0');
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/favorites_lib.php';
@@ -19,29 +19,40 @@ if (!csrf_check()) {
     exit;
 }
 
-$hex = strtolower(trim($_POST['hex'] ?? ''));
+$id = trim((string) ($_POST['id'] ?? ''));
 $action = $_POST['action'] ?? 'toggle';
-if (!fav_valid_hex($hex)) {
+if (!fav_valid_id($id)) {
     http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => 'HEX non valido']);
+    echo json_encode(['ok' => false, 'error' => 'ID evento non valido']);
     exit;
 }
+$id = (int) $id;
 
 try {
     $pdo = fav_open(true);
     fav_ensure_schema($pdo);
 
+    // L'evento deve esistere (per "add"/"toggle"->add)
+    $exists = $pdo->prepare("SELECT 1 FROM events WHERE id = ?");
+    $exists->execute([$id]);
+    $event_exists = (bool) $exists->fetchColumn();
+
     if ($action === 'toggle') {
-        $st = $pdo->prepare("SELECT 1 FROM favorites WHERE hex = ?");
-        $st->execute([$hex]);
+        $st = $pdo->prepare("SELECT 1 FROM favorites WHERE event_id = ?");
+        $st->execute([$id]);
         $action = $st->fetchColumn() ? 'remove' : 'add';
     }
 
     if ($action === 'add') {
-        $pdo->prepare("INSERT OR IGNORE INTO favorites (hex) VALUES (?)")->execute([$hex]);
+        if (!$event_exists) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Evento inesistente']);
+            exit;
+        }
+        $pdo->prepare("INSERT OR IGNORE INTO favorites (event_id) VALUES (?)")->execute([$id]);
         $favorited = true;
     } elseif ($action === 'remove') {
-        $pdo->prepare("DELETE FROM favorites WHERE hex = ?")->execute([$hex]);
+        $pdo->prepare("DELETE FROM favorites WHERE event_id = ?")->execute([$id]);
         $favorited = false;
     } else {
         http_response_code(400);
@@ -49,7 +60,7 @@ try {
         exit;
     }
 
-    echo json_encode(['ok' => true, 'hex' => $hex, 'favorited' => $favorited]);
+    echo json_encode(['ok' => true, 'id' => $id, 'favorited' => $favorited]);
 } catch (Throwable $e) {
     error_log('toggle_favorite.php: ' . $e->getMessage());
     http_response_code(500);

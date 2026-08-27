@@ -33,9 +33,10 @@ CREATE INDEX IF NOT EXISTS idx_events_type_seen  ON events(event_type, first_see
 CREATE INDEX IF NOT EXISTS idx_events_hex        ON events(hex);
 CREATE INDEX IF NOT EXISTS idx_events_callsign   ON events(callsign);
 
--- Preferiti: watchlist per-aeromobile con nota annotabile (una per hex).
+-- Preferiti: PER-EVENTO, con nota annotabile (una per evento).
+-- event_id -> events.id. Creata pigramente dalla webapp al primo uso.
 CREATE TABLE IF NOT EXISTS favorites (
-    hex        TEXT PRIMARY KEY,
+    event_id   INTEGER PRIMARY KEY,
     note       TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
