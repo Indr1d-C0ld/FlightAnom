@@ -136,7 +136,10 @@ function fa_country_flag_html(?string $code): string {
     if (preg_match('/^[A-Z]{2}$/', $c)) {
         $svg = __DIR__ . '/flags/' . $c . '.svg';
         if (is_file($svg)) {
-            return '<img src="flags/' . $c . '.svg" class="flag-icon" alt="' . $c . '" title="' . $c . '">';
+            // dimensione inline: cosi' e' corretta anche nelle pagine che non
+            // caricano assets/style.css (es. view.php).
+            return '<img src="flags/' . $c . '.svg" class="flag-icon" alt="' . $c . '" title="' . $c
+                 . '" style="height:12px;width:auto;vertical-align:middle;border-radius:2px">';
         }
         $o = 0x1F1E6 - 65;
         return '<span title="' . $c . '">' . mb_chr(ord($c[0]) + $o) . mb_chr(ord($c[1]) + $o) . '</span>';

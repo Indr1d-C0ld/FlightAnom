@@ -58,6 +58,9 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- La bandiera nazione (`fa_country_flag_html`) ha ora la dimensione
+  **inline** (`height:12px`): corretta anche in `view.php`, che non carica
+  `assets/style.css`.
 - **Fix login 500**: `db/auth.db` e i suoi sidecar devono essere
   scrivibili dal gruppo (Apache + CLI). `get_auth_db()` ora imposta
   `umask(0002)` alla creazione e fa `chmod 0664` best-effort; `login.php`
