@@ -232,37 +232,6 @@ endif;
     <meta name="csrf-token" content="<?= htmlspecialchars(csrf_token()) ?>">
     <title>Flight Anomaly Monitor</title>
     <link rel="stylesheet" href="assets/style.css">
-    <style>
-        .copy-btn { background: none; border: none; cursor: pointer; padding: 0 4px; font-size: 1em; }
-        .icon-link { text-decoration: none; margin: 0 4px; font-size: 1.2em; }
-        .icon-link.disabled { opacity: 0.5; cursor: not-allowed; }
-        .actions { white-space: nowrap; }
-        .quick-range { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 5px; }
-        .quick-btn { padding: 5px 10px; cursor: pointer; }
-        .filters select, .filters input { margin-right: 5px; }
-        th a { color: inherit; text-decoration: none; }
-        th a:hover { text-decoration: underline; }
-        .pagination { margin: 20px 0; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; align-items: center; }
-        .pagination a, .pagination span {
-            padding: 6px 12px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            text-decoration: none;
-            color: #333;
-            background: #fff;
-            display: inline-block;
-        }
-        .pagination .current {
-            background: #007BFF;
-            color: white;
-            border-color: #007BFF;
-            font-weight: bold;
-        }
-        .pagination .disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-    </style>
 </head>
 <body>
 <div class="container">
@@ -281,8 +250,8 @@ endif;
         <input type="text" name="reg" placeholder="Registrazione" value="<?= htmlspecialchars($_GET['reg']??'') ?>">
         <input type="text" name="model" placeholder="Modello" value="<?= htmlspecialchars($_GET['model']??'') ?>">
         <input type="text" name="squawk" placeholder="Squawk" value="<?= htmlspecialchars($_GET['squawk']??'') ?>">
-        <input type="text" name="country" placeholder="Naz. (ISO2)" size="8" value="<?= htmlspecialchars($_GET['country']??'') ?>">
-        <input type="text" name="operator" placeholder="Compagnia (ICAO)" size="12" value="<?= htmlspecialchars($_GET['operator']??'') ?>">
+        <input type="text" name="country" placeholder="Naz. ISO2" value="<?= htmlspecialchars($_GET['country']??'') ?>">
+        <input type="text" name="operator" placeholder="Compagnia ICAO" value="<?= htmlspecialchars($_GET['operator']??'') ?>">
         <input type="date" name="date_from" value="<?= htmlspecialchars($date_from) ?>">
         <input type="date" name="date_to" value="<?= htmlspecialchars($date_to) ?>">
         <label title="Confidenza minima">conf ≥

@@ -58,6 +58,11 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- **UI**: stile inline di `index.php` spostato in `assets/style.css`;
+  pulsanti del form filtri e delle fasce rapide con forma uniforme
+  ("Filtra" primario blu, gli altri secondari); campi Naz./Compagnia
+  senza `size` fisso (niente placeholder troncato), larghezza minima
+  uniforme via CSS.
 - **Accesso e ruoli** (`auth.php`, `login.php`, `logout.php`,
   `auth_useradd.php`): portale pubblico in lettura, azioni sui preferiti
   riservate a `collaboratore`/`admin`. Sessione + CSRF + rate-limit;

@@ -1,7 +1,40 @@
 body { font-family: Arial, sans-serif; margin: 10px; background: #f4f4f4; }
 .container { max-width: 2100px; margin: 0 auto; background: white; padding: 14px 20px; border-radius: 8px; }
-.filters { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-.filters select, .filters input, .filters button { padding: 6px 8px; }
+.filters { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filters select, .filters input { padding: 6px 8px; }
+.filters input[type="text"], .filters input[type="date"] { min-width: 8.5rem; }
+
+.copy-btn { background: none; border: none; cursor: pointer; padding: 0 4px; font-size: 1em; }
+.icon-link { text-decoration: none; margin: 0 4px; font-size: 1.2em; }
+.icon-link.disabled { opacity: 0.5; cursor: not-allowed; }
+.actions { white-space: nowrap; }
+.quick-range { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Pulsanti del form filtri e delle fasce rapide: forma omogenea */
+.filters button, .filter-bar button, .quick-btn {
+    padding: 6px 12px;
+    border: 1px solid #b9c2cc;
+    border-radius: 5px;
+    background: #f1f3f5;
+    color: #333;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+.filters button:hover, .filter-bar button:hover, .quick-btn:hover { background: #e4e7ea; }
+.filters > button[type="submit"] {          /* "Filtra": azione primaria */
+    background: #007BFF; border-color: #0069d9; color: #fff; font-weight: 600;
+}
+.filters > button[type="submit"]:hover { background: #0069d9; }
+
+.pagination { margin: 20px 0; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; align-items: center; }
+.pagination a, .pagination span {
+    padding: 6px 12px; border: 1px solid #ccc; border-radius: 6px;
+    text-decoration: none; color: #333; background: #fff; display: inline-block;
+}
+.pagination .current { background: #007BFF; color: #fff; border-color: #007BFF; font-weight: bold; }
+.pagination .disabled { opacity: 0.5; pointer-events: none; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 5px 9px; text-align: left; border-bottom: 1px solid #ddd; font-size: 0.92rem; }
 th { background: #007BFF; color: white; }
