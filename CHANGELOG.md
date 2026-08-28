@@ -2,6 +2,9 @@
 
 ## Non ancora rilasciato
 
+_Progetto in revisione finale: motore di detection, portale ed ecosistema di
+accesso sono completi; da qui in avanti solo correzioni._
+
 ### Motore di detection — riscrittura
 - **Tracce tempo-consapevoli e segmentate**: ogni punto ha timestamp; un buco
   oltre `--segment-gap-s` apre un nuovo segmento (basta falsi loop da sortite
@@ -76,6 +79,13 @@
   riservate a `collaboratore`/`admin`. Sessione + CSRF + rate-limit;
   utenti in `db/auth.db` separato. `csrf.php` diventa un alias di `auth.php`.
   Rimossa la Basic Auth di sito; `.htaccess.example` aggiornato.
+- **Gestione utenti da browser** (`admin_users.php`, solo `admin`): creazione
+  utente con ruolo, cambio ruolo inline, reset password, eliminazione e
+  cambio della propria password. Tutte le azioni con token CSRF; guardie
+  contro la retrocessione/eliminazione dell'ultimo `admin` e le operazioni
+  su sé stessi. Link "👤 Utenti" nella barra di navigazione per gli `admin`
+  (`auth_nav_html()`); helper `admin_user_count()` / `user_is_admin()` in
+  `auth.php`. Modellato sull'`admin_users.php` del progetto milair_ita.
 - **Antifalsi RETICOLATO, giro 2** (ventagli SID/STAR e climb-out):
   `classify_grid` ora scarta i **corridoi lunghi e stretti** (rapporto fra
   gli assi > 3.5: un'area 2D vera e' piu' quadrata) e le tracce con

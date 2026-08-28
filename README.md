@@ -47,6 +47,7 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile (scrittura: login) |
 | `webapp/auth.php` + `login.php` + `logout.php` | sessione, ruoli, CSRF |
 | `webapp/auth_useradd.php` | CLI: crea/aggiorna un utente (`admin` / `collaboratore`) |
+| `webapp/admin_users.php` | pagina web (solo `admin`): crea utenti, cambia ruolo, reset password, elimina, cambio password proprio |
 | `webapp/download_silhouettes.php` | CLI: scarica le silhouette (stile VRS) dei tipi velivolo visti, in `silhouettes/` (via cron) |
 | `webapp/download_opflags.php` | CLI: popola `opflags/` con i loghi compagnia (VRS OperatorFlags), da zip o mirror per-file |
 | `webapp/api/events.php` | stessi eventi in JSON |
@@ -134,6 +135,13 @@ dall'applicazione (`auth.php`, sessione + CSRF, rate-limit sui tentativi).
 ```bash
 php webapp/auth_useradd.php mario admin        # crea il primo utente (password al prompt)
 ```
+
+Creato il primo `admin`, gli altri utenti si gestiscono dal browser in
+**`admin_users.php`** (visibile solo agli `admin`, link "👤 Utenti" nella
+barra di navigazione): creazione utente con ruolo, cambio ruolo, reset
+password, eliminazione e cambio della propria password. Sono impedite la
+retrocessione/eliminazione dell'ultimo `admin` e le operazioni su sé stessi
+che avrebbero senso solo via CLI.
 
 Utenti e tentativi in `db/auth.db` (separato da `events.db`, non servito via
 HTTP). Le sessioni in `sessions/` (deny-all). Per un deployment interamente

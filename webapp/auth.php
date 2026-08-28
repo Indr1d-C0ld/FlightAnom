@@ -185,14 +185,24 @@ function csrf_check(): bool {
     return is_string($sent) && $sent !== '' && hash_equals($_SESSION['csrf_token'] ?? '', $sent);
 }
 
-/** Barra di stato accesso per la nav (link Accedi / Esci). */
+/** Barra di stato accesso per la nav (link Accedi / Esci / Utenti). */
 function auth_nav_html(): string {
-    if (is_logged_in()) {
-        $u = htmlspecialchars(current_user()['username']);
-        $r = htmlspecialchars(current_role());
-        return "<span class=\"muted\">$u ($r)</span> <a href=\"logout.php\">Esci</a>";
+    if (!is_logged_in()) {
+        return '<a href="login.php">Accedi</a>';
     }
-    return '<a href="login.php">Accedi</a>';
+    $u = htmlspecialchars(current_user()['username']);
+    $r = htmlspecialchars(current_role());
+    $admin = current_role() === 'admin' ? ' <a href="admin_users.php">👤 Utenti</a>' : '';
+    return "<span class=\"muted\">$u ($r)</span>{$admin} <a href=\"logout.php\">Esci</a>";
+}
+
+function admin_user_count(PDO $db): int {
+    return (int) $db->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn();
+}
+function user_is_admin(PDO $db, int $id): bool {
+    $s = $db->prepare("SELECT role FROM users WHERE id=?");
+    $s->execute([$id]);
+    return $s->fetchColumn() === 'admin';
 }
 
 // auth.php non fa il bootstrap da solo: lo chiamano le pagine (auth_bootstrap()).
