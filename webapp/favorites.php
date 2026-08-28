@@ -4,6 +4,8 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/favorites_lib.php';
 
+$can_edit = is_logged_in();
+
 $search = trim($_GET['q'] ?? '');
 $sort   = $_GET['sort'] ?? 'created_at';
 $order  = (($_GET['order'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
@@ -75,7 +77,7 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
 </head>
 <body>
 <div class="container">
-    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a></p>
+    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <h1>⭐ Eventi preferiti</h1>
 
     <?php if ($load_error): ?>
@@ -108,8 +110,12 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
         <?php foreach ($rows as $r): ?>
             <tr>
                 <td data-label="">
-                    <button type="button" class="fav-btn is-fav" data-id="<?= (int) $r['event_id'] ?>"
-                            title="Rimuovi dai preferiti" aria-pressed="true">⭐</button>
+                    <?php if ($can_edit): ?>
+                        <button type="button" class="fav-btn is-fav" data-id="<?= (int) $r['event_id'] ?>"
+                                title="Rimuovi dai preferiti" aria-pressed="true">⭐</button>
+                    <?php else: ?>
+                        <span class="fav-static" title="Evento preferito">⭐</span>
+                    <?php endif; ?>
                 </td>
                 <td data-label="Data"><?= htmlspecialchars(fav_format_it($r['first_seen_utc'])) ?></td>
                 <td data-label="Tipo"><?= htmlspecialchars($r['event_type']) ?></td>
@@ -123,7 +129,9 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
                     <?php if ((string) $r['fav_note'] !== ''): ?>
                         <span class="fav-note"><?= nl2br(htmlspecialchars($r['fav_note'])) ?></span>
                     <?php endif; ?>
-                    <a href="edit_favorite.php?id=<?= (int) $r['event_id'] ?>" class="icon-link" title="Modifica nota">✏️</a>
+                    <?php if ($can_edit): ?>
+                        <a href="edit_favorite.php?id=<?= (int) $r['event_id'] ?>" class="icon-link" title="Modifica nota">✏️</a>
+                    <?php endif; ?>
                 </td>
                 <td data-label="Aggiunto il"><?= htmlspecialchars(fav_format_it($r['created_at'] . ' UTC')) ?></td>
                 <td data-label="">

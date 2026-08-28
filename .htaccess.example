@@ -1,31 +1,27 @@
 # Flight Anomaly Monitor - .htaccess della root della webapp.
-# Copiare in .htaccess dove sono serviti i .php e adattare il percorso di AuthUserFile.
+# Copiare in .htaccess dove sono serviti i .php.
 #
-# Il portale non ha login applicativo: l'accesso e' protetto da HTTP Basic Auth
-# a livello di webserver (il browser reinvia le credenziali su ogni richiesta,
-# incluse le fetch() verso api/events.php e toggle_favorite.php).
+# Il portale e' PUBBLICO in lettura: elenco eventi, dettaglio, statistiche e API
+# non richiedono autenticazione. L'accesso alle azioni sui preferiti e' gestito
+# dall'applicazione (auth.php: sessione + ruoli collaboratore/admin). Creare il
+# primo utente con:  php auth_useradd.php <nome> admin
 
-AuthType Basic
-AuthName "Flight Anomaly Monitor"
-# Generare con:  htpasswd -c -B /percorso/fuori/docroot/.htpasswd nomeutente
-AuthUserFile /percorso/fuori/docroot/.htpasswd
-Require valid-user
-
-# Nega comunque l'accesso diretto via HTTP a configurazione, database e dump SQL
-# (la webapp li legge dal filesystem, non via HTTP).
+# Nega l'accesso diretto via HTTP a database, dump SQL, config, include e sessioni.
 <FilesMatch "\.(db|db-wal|db-shm|sqlite|sqlite3|sql)$">
     Require all denied
 </FilesMatch>
-<Files "config.php">
+<FilesMatch "^(config\.php|auth\.php|favorites_lib\.php|csrf\.php|auth_useradd\.php)$">
     Require all denied
-</Files>
+</FilesMatch>
+
+# La cartella sessions/ e db/ hanno un proprio .htaccess deny-all
+# (deploy/htaccess-db.example / htaccess-sessions.example).
 
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set Referrer-Policy "same-origin"
-    # 'unsafe-inline' necessario: il portale usa <script> inline, handler
-    # onclick/onsubmit e attributi style=. La mappa di view.php carica Leaflet
-    # da unpkg.com con SRI: le voci unpkg.com qui sotto coprono quel caso.
+    # 'unsafe-inline' necessario: <script> inline, handler onclick/onsubmit,
+    # attributi style=. view.php carica Leaflet da unpkg.com con SRI.
     Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
 </IfModule>

@@ -59,3 +59,21 @@ CREATE TABLE IF NOT EXISTS favorites (
     note       TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ---------------------------------------------------------------------------
+-- Utenti / sessioni: database SEPARATO (db/auth.db), creato da auth.php.
+-- Ruoli: 'collaboratore' (gestisce i preferiti), 'admin' (+ utenti).
+-- ---------------------------------------------------------------------------
+-- CREATE TABLE users (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     username TEXT NOT NULL UNIQUE,
+--     password_hash TEXT NOT NULL,
+--     role TEXT NOT NULL CHECK (role IN ('collaboratore','admin')),
+--     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+--     last_login_at TEXT, last_login_ip TEXT
+-- );
+-- CREATE TABLE login_attempts (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     username TEXT, ip TEXT, success INTEGER,
+--     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+-- );

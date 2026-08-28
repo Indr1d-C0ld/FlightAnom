@@ -35,3 +35,7 @@ webapp/opflags/*
 # Bandiere nazione SVG (set esterno; fallback emoji se assenti)
 webapp/flags/*
 !webapp/flags/.gitkeep
+
+# Sessioni e utenti (mai nel repo pubblico; nel privato auth.db e' incluso a parte)
+webapp/sessions/*
+!webapp/sessions/.gitkeep

@@ -58,6 +58,21 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- **Accesso e ruoli** (`auth.php`, `login.php`, `logout.php`,
+  `auth_useradd.php`): portale pubblico in lettura, azioni sui preferiti
+  riservate a `collaboratore`/`admin`. Sessione + CSRF + rate-limit;
+  utenti in `db/auth.db` separato. `csrf.php` diventa un alias di `auth.php`.
+  Rimossa la Basic Auth di sito; `.htaccess.example` aggiornato.
+- **Antifalsi positivi RETICOLATO**: il pattern ora richiede che la traccia
+  si **auto-incroci** (>= `--grid-min-selfx`, default 5) — un raster vero lo
+  fa, il ventaglio di SID/STAR no. In più, RETICOLATO/TAGLIAERBA a bassa
+  quota entro ~45 km da uno scalo = area terminale -> scartato (salvo mil).
+  Sui dati reali: -48%% di eventi RETICOLATO.
+- **Layout**: contenuto disteso in larghezza (`.container` fino a 2100px),
+  righe di tabella più sottili; bandiere più piccole; correzioni grafiche
+  nelle card statistiche (overflow, date compatte, celle nowrap).
+- I link di drill-down (compagnia, nazione, modello, ...) aprono la tabella
+  con fascia temporale **Sempre**.
 - **Auto-aggiornamento** opzionale della tabella eventi (`index.php`):
   casella + intervallo regolabile (10 s / 30 s / 1-2-5 min), preferenza in
   `localStorage`. Ricarica solo la regione `#events-region` via `fetch`

@@ -13,6 +13,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Metodo non consentito']);
     exit;
 }
+require_role('collaboratore', true);   // login + ruolo (risposta JSON)
 if (!csrf_check()) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'CSRF token non valido']);

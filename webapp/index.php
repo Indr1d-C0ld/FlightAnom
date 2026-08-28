@@ -3,8 +3,10 @@
 
 ini_set('display_errors', '0'); // produzione: nessun dettaglio errore al client (gia' Off nel php.ini, ridondanza difensiva)
 
-require_once __DIR__ . '/csrf.php';           // sessione + token per il toggle preferiti
+require_once __DIR__ . '/csrf.php';           // sessione + CSRF + auth
 require_once __DIR__ . '/favorites_lib.php';
+
+$can_edit = is_logged_in();   // collaboratore/admin: mostra le azioni di scrittura
 
 $db_path = fa_config()['db_path'];
 $milair_base_url = rtrim((string) fa_config()['milair_base_url'], '/');
@@ -265,7 +267,7 @@ endif;
 <body>
 <div class="container">
     <h1>✈️ Flight Anomaly Monitor</h1>
-    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a></p>
+    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <form method="GET" class="filters" id="filterForm">
         <select name="event_type">
             <option value="">Tutti i tipi</option>
@@ -362,7 +364,7 @@ endif;
                     <?php endif; ?>
                     <button class="copy-btn" onclick="copyText(this.dataset.copy)" data-copy="<?= htmlspecialchars($hex) ?>" title="Copia ICAO">📋</button>
                 </td>
-                <td data-label="Naz."><?php $cc = $ev['country'] ?? ''; ?><a href="?country=<?= urlencode($cc) ?>" title="Filtra per <?= htmlspecialchars($cc) ?>"><?= fa_country_flag_html($cc) ?></a> <span class="muted"><?= htmlspecialchars($cc) ?></span></td>
+                <td data-label="Naz."><?php $cc = $ev['country'] ?? ''; ?><a href="index.php?country=<?= urlencode($cc) ?>&amp;quick_range=all" title="Eventi di <?= htmlspecialchars($cc) ?> (sempre)"><?= fa_country_flag_html($cc) ?> <span class="muted"><?= htmlspecialchars($cc) ?></span></a></td>
                 <td data-label="Callsign">
                     <?php if (!empty($callsign)): ?>
                         <a href="<?= htmlspecialchars($planespotters_url) ?>" target="_blank" title="Cerca <?= htmlspecialchars($callsign) ?> su Planespotters">
@@ -373,7 +375,7 @@ endif;
                         <?= htmlspecialchars($callsign) ?>
                     <?php endif; ?>
                 </td>
-                <td data-label="Compagnia"><?php $op = $ev['operator'] ?? ''; if ($op !== ''): $opl = fa_operator_logo($op); ?><a href="?operator=<?= urlencode($op) ?>" title="Filtra per <?= htmlspecialchars($op) ?>"><?php if ($opl): ?><img src="<?= htmlspecialchars($opl) ?>" class="op-logo" alt=""><?php endif; ?><?= htmlspecialchars($op) ?></a><?php endif; ?></td>
+                <td data-label="Compagnia"><?php $op = $ev['operator'] ?? ''; if ($op !== ''): $opl = fa_operator_logo($op); ?><a href="index.php?operator=<?= urlencode($op) ?>&amp;quick_range=all" title="Tutti gli eventi di <?= htmlspecialchars($op) ?> (sempre)"><?php if ($opl): ?><img src="<?= htmlspecialchars($opl) ?>" class="op-logo" alt=""><?php endif; ?><?= htmlspecialchars($op) ?></a><?php endif; ?></td>
                 <td data-label="Reg"><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
                 <td data-label="Modello"><?php $sil = fa_silhouette_path($ev['model_t'] ?? ''); if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt="" title="<?= htmlspecialchars($ev['model_t']) ?>"><?php endif; ?><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
                 <td data-label="Squawk"><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
@@ -381,10 +383,14 @@ endif;
                 <td data-label="Note"><?= htmlspecialchars($ev['note']) ?></td>
                 <?php $is_fav = isset($fav_set[(int) $ev['id']]); ?>
                 <td class="actions" data-label="">
-                    <button type="button" class="fav-btn<?= $is_fav ? ' is-fav' : '' ?>"
-                            data-id="<?= (int) $ev['id'] ?>"
-                            aria-pressed="<?= $is_fav ? 'true' : 'false' ?>"
-                            title="<?= $is_fav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti' ?>"><?= $is_fav ? '⭐' : '☆' ?></button>
+                    <?php if ($can_edit): ?>
+                        <button type="button" class="fav-btn<?= $is_fav ? ' is-fav' : '' ?>"
+                                data-id="<?= (int) $ev['id'] ?>"
+                                aria-pressed="<?= $is_fav ? 'true' : 'false' ?>"
+                                title="<?= $is_fav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti' ?>"><?= $is_fav ? '⭐' : '☆' ?></button>
+                    <?php elseif ($is_fav): ?>
+                        <span class="fav-static" title="Evento preferito">⭐</span>
+                    <?php endif; ?>
                     <a href="view.php?id=<?= $ev['id'] ?>" title="Apri mappa traccia" class="icon-link">🗺️</a>
                     <?php if ($flightradar24_url): ?>
                         <a href="<?= htmlspecialchars($flightradar24_url) ?>" target="_blank" title="Apri Flightradar24 per <?= htmlspecialchars($callsign) ?>" class="icon-link">✈️</a>

@@ -99,6 +99,9 @@ AIRLINER_TYPES = {
     "MD82", "MD83", "MD88", "MD90", "F70", "F100", "RJ85", "RJ1H",
 }
 
+# Auto-incroci minimi perche' un pattern sia RETICOLATO (regolabile da CLI).
+GRID_MIN_SELFX = 5
+
 # ===========================================================================
 # Nazionalita' (ICAO 24-bit block -> ISO2) e operatore (codice compagnia ICAO)
 # ===========================================================================
@@ -648,9 +651,40 @@ def classify_lawnmower(seg: List[TP], min_points=16, min_km=6.0, tol=18.0, min_l
     return ("TAGLIAERBA", geom, max(along_span, perp_span), seg[-1].t - seg[0].t)
 
 
-def classify_grid(seg: List[TP], min_points=30, min_km=6.0, tol=15.0):
-    """Reticolato: due direzioni ~perpendicolari CHE COPRONO un'area 2D
-    (non S ripetute sullo stesso posto). Ritorna (subtype, geom_conf, extent_km, dur_s) o None."""
+def _seg_cross(a, b, c, d) -> bool:
+    """True se il segmento a-b interseca c-d (intersezione propria)."""
+    def o(p, q, r):
+        return (r[1] - p[1]) * (q[0] - p[0]) - (q[1] - p[1]) * (r[0] - p[0])
+    d1, d2 = o(c, d, a), o(c, d, b)
+    d3, d4 = o(a, b, c), o(a, b, d)
+    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0)
+
+
+def self_intersections(xy: List[Tuple[float, float]], cap: int = 260) -> int:
+    """Quante volte la polilinea della traccia incrocia se stessa. Un raster/
+    mesh vero si auto-incrocia molte volte; una partenza/avvicinamento no."""
+    n = len(xy)
+    if n > cap:
+        step = n // cap + 1
+        xy = xy[::step]
+        n = len(xy)
+    cnt = 0
+    for i in range(n - 1):
+        a, b = xy[i], xy[i + 1]
+        for j in range(i + 2, n - 1):
+            if i == 0 and j == n - 2:
+                continue
+            if _seg_cross(a, b, xy[j], xy[j + 1]):
+                cnt += 1
+    return cnt
+
+
+def classify_grid(seg: List[TP], min_points=30, min_km=6.0, tol=15.0, min_selfx=None):
+    """Reticolato: due direzioni ~perpendicolari CHE COPRONO un'area 2D e con la
+    traccia che si AUTO-INCROCIA (non il ventaglio di SID/STAR su pista).
+    Ritorna (subtype, geom_conf, extent_km, dur_s) o None."""
+    if min_selfx is None:
+        min_selfx = GRID_MIN_SELFX
     if len(seg) < min_points:
         return None
     xy, _ = _xy_of(seg)
@@ -682,7 +716,11 @@ def classify_grid(seg: List[TP], min_points=30, min_km=6.0, tol=15.0):
         return None
     if len({c[0] for c in cells}) < 3 or len({c[1] for c in cells}) < 3:
         return None
-    geom = min(1.0, 0.30 + 0.02 * min(len(cells), 20) + 0.10 * min((fa + fb - 0.65) * 3.0, 1.0))
+    sx = self_intersections(xy)
+    if sx < min_selfx:
+        return None
+    geom = min(1.0, 0.28 + 0.02 * min(len(cells), 20) + 0.015 * min(sx, 16)
+               + 0.08 * min((fa + fb - 0.65) * 3.0, 1.0))
     return ("RETICOLATO", geom, max(span_a, span_b), seg[-1].t - seg[0].t)
 
 
@@ -1108,6 +1146,12 @@ def selftest() -> int:
     g = classify_grid(_synth(grid, 200))
     checks.append(("grid->RETICOLATO", g is not None))
     checks.append(("line->nulla", classify_pattern(_synth(line, 90)) is None))
+    # auto-incroci: la griglia ne ha molti, una L (base+finale) no
+    gxy, _ = _xy_of(_synth(grid, 200))
+    checks.append(("self-intersections griglia >= 5", self_intersections(gxy) >= 5))
+    Lshape = [(43.0, 11.0 + 0.002 * i) for i in range(40)] + [(43.0 + 0.002 * i, 11.08) for i in range(40)]
+    checks.append(("L-shape non e' RETICOLATO",
+                   classify_grid(_synth(lambda n: Lshape, 80)) is None))
     checks.append(("line non-orbita", classify_orbit(_synth(line, 90)) is None))
     # priori
     ac = Aircraft("ae1234", "FORTE11", 43, 11, 55000, 300, time.time(),
@@ -1200,6 +1244,8 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--hold-reject", type=float, default=0.65,
                     help="penalita' 'traffico ordinario' oltre la quale il PATTERN "
                          "viene scartato (a meno di prior ISR/militare forte). 1.0 = mai")
+    ap.add_argument("--grid-min-selfx", type=int, default=5,
+                    help="auto-incroci minimi della traccia per un RETICOLATO")
     ap.add_argument("--segment-gap-s", type=float, default=600.0,
                     help="buco temporale che apre un nuovo segmento di traccia")
     ap.add_argument("--episode-gap-s", type=float, default=1200.0,
@@ -1219,6 +1265,8 @@ def build_argparser() -> argparse.ArgumentParser:
 
 def main():
     args, _unknown = build_argparser().parse_known_args()
+    global GRID_MIN_SELFX
+    GRID_MIN_SELFX = args.grid_min_selfx
     if args.selftest:
         sys.exit(selftest())
     if not args.polygons_file:
@@ -1299,16 +1347,24 @@ def main():
                 if hold_reject and not strong_isr and hold_pen >= args.hold_reject:
                     continue
 
+                # Area terminale: RETICOLATO/TAGLIAERBA a bassa quota vicino a uno
+                # scalo = ventaglio di partenze/avvicinamenti su pista, non un survey.
+                apt, dkm = (nearest_airport(ac.lat, ac.lon, airports) if airports else (None, 1e9))
+                if subtype in ("RETICOLATO", "TAGLIAERBA") and not strong_isr and apt:
+                    seg_min_alt = min((p.alt for p in seg if p.alt is not None), default=99999)
+                    term_km = max(apt.get("exclusion_km", 0), 45.0)
+                    if dkm < term_km and seg_min_alt < 4500:
+                        htags.append(f"area-terminale {apt.get('icao', '')}")
+                        continue
+
                 confidence = max(0.0, min(1.0, 0.45 * geom + kin + prior - hold_pen * 0.40))
 
                 near_flag = 0
-                if airports:
-                    apt, dkm = nearest_airport(ac.lat, ac.lon, airports)
-                    if apt and dkm < apt.get("exclusion_km", 0):
-                        near_flag = 1
-                        # vicino allo scalo: registra solo se militare o confidenza alta
-                        if not ac.is_mil and confidence < 0.5:
-                            continue
+                if apt and dkm < apt.get("exclusion_km", 0):
+                    near_flag = 1
+                    # vicino allo scalo: registra solo se militare o confidenza alta
+                    if not ac.is_mil and confidence < 0.5:
+                        continue
                 if confidence < args.min_confidence:
                     continue
 

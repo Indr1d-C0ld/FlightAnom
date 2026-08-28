@@ -6,6 +6,8 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/favorites_lib.php';
 
+require_role('collaboratore');   // login + ruolo (redirect al login se anonimo)
+
 $id = trim((string) ($_GET['id'] ?? $_POST['id'] ?? ''));
 if (!fav_valid_id($id)) {
     http_response_code(400);

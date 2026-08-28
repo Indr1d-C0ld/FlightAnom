@@ -1,0 +1,2 @@
+# Blocca ogni accesso HTTP alla cartella delle sessioni PHP.
+Require all denied

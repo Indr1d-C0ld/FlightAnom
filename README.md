@@ -44,7 +44,9 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/index.php` | elenco eventi: filtri (HEX/callsign/reg/squawk/modello/conf/mil/date), ordinamento, paginazione, toggle ⭐ |
 | `webapp/view.php` | dettaglio evento + mappa della traccia |
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
-| `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile |
+| `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile (scrittura: login) |
+| `webapp/auth.php` + `login.php` + `logout.php` | sessione, ruoli, CSRF |
+| `webapp/auth_useradd.php` | CLI: crea/aggiorna un utente (`admin` / `collaboratore`) |
 | `webapp/download_silhouettes.php` | CLI: scarica le silhouette (stile VRS) dei tipi velivolo visti, in `silhouettes/` (via cron) |
 | `webapp/download_opflags.php` | CLI: popola `opflags/` con i loghi compagnia (VRS OperatorFlags), da zip o mirror per-file |
 | `webapp/api/events.php` | stessi eventi in JSON |
@@ -120,6 +122,22 @@ I priori militari/ISR incorporati si sovrascrivono con `monitor/priors.json`
 ```bash
 monitor/venv/bin/python3 monitor/flight_anom.py --selftest
 ```
+
+## Accesso e ruoli
+
+Il portale è **pubblico in lettura**: elenco eventi, dettaglio, statistiche e
+API (`api/events.php`) non richiedono login. Le azioni "di piattaforma" —
+aggiungere/rimuovere/annotare i **preferiti** — richiedono un utente con ruolo
+`collaboratore` o `admin`. Nessuna Basic Auth: l'accesso è gestito
+dall'applicazione (`auth.php`, sessione + CSRF, rate-limit sui tentativi).
+
+```bash
+php webapp/auth_useradd.php mario admin        # crea il primo utente (password al prompt)
+```
+
+Utenti e tentativi in `db/auth.db` (separato da `events.db`, non servito via
+HTTP). Le sessioni in `sessions/` (deny-all). Per un deployment interamente
+privato basta rimettere una Basic Auth a livello di webserver sopra tutto.
 
 ## Nazionalità e compagnie
 

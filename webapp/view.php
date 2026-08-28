@@ -2,6 +2,7 @@
 // view.php - Dettaglio evento con mappa interattiva e layout bilanciato
 ini_set('display_errors', '0'); // produzione: nessun dettaglio errore al client
 require_once __DIR__ . '/favorites_lib.php';
+require_once __DIR__ . '/auth.php';
 
 $id = (int)($_GET['id'] ?? 0);
 $db_path = fa_config()['db_path'];

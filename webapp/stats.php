@@ -2,6 +2,7 @@
 // stats.php - Statistiche del portale e del database, con classifiche.
 ini_set('display_errors', '0');
 require_once __DIR__ . '/favorites_lib.php';
+require_once __DIR__ . '/auth.php';
 
 function st_rows(PDO $p, string $sql, array $args = []): array {
     $s = $p->prepare($sql);
@@ -18,6 +19,10 @@ function st_bar($v, $max, int $w = 150): string {
     return '<span class="bar" style="width:' . $px . 'px"></span>';
 }
 function st_h(?string $s): string { return htmlspecialchars((string) $s); }
+function st_dt_short(?string $utc): string {
+    $s = fav_format_it($utc);                 // d/m/Y H:i:s
+    return preg_replace('#^(\d{2}/\d{2})/\d{4} (\d{2}:\d{2}):\d{2}$#', '$1 $2', $s);
+}
 function st_dur(?int $s): string {
     $s = (int) $s;
     if ($s <= 0) return '—';
@@ -108,7 +113,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
 </head>
 <body>
 <div class="container">
-    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a></p>
+    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <h1>📊 Statistiche</h1>
 
     <div class="kpi-row">
@@ -167,7 +172,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
                 <tr><th>ICAO</th><th>Callsign</th><th>Modello</th><th>N°</th></tr>
                 <?php foreach ($top_ac as $r): ?>
                 <tr>
-                    <td><?php if ((int)$r['is_mil'] === 1): ?><span class="mil-badge">⚑</span> <?php endif; ?><a href="index.php?hex=<?= urlencode($r['hex']) ?>"><?= st_h($r['hex']) ?></a></td>
+                    <td><?php if ((int)$r['is_mil'] === 1): ?><span class="mil-badge">⚑</span> <?php endif; ?><a href="index.php?hex=<?= urlencode($r['hex']) ?>&amp;quick_range=all"><?= st_h($r['hex']) ?></a></td>
                     <td><?= st_h($r['callsign']) ?></td><td><?= st_h($r['model_t']) ?></td><td><?= number_format($r['n']) ?></td>
                 </tr>
                 <?php endforeach; ?>
@@ -178,7 +183,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Classifica callsign</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_cs ?: [['n'=>1]]));
             foreach ($top_cs as $r): ?>
-                <tr><td><a href="index.php?callsign=<?= urlencode($r['callsign']) ?>"><?= st_h($r['callsign']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><a href="index.php?callsign=<?= urlencode($r['callsign']) ?>&amp;quick_range=all"><?= st_h($r['callsign']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 
@@ -186,7 +191,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Classifica compagnie</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_op ?: [['n'=>1]]));
             foreach ($top_op as $r): $ol = fa_operator_logo($r['operator']); ?>
-                <tr><td><?php if ($ol): ?><img src="<?= htmlspecialchars($ol) ?>" class="op-logo" alt=""><?php endif; ?><a href="index.php?operator=<?= urlencode($r['operator']) ?>"><?= st_h($r['operator']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><?php if ($ol): ?><img src="<?= htmlspecialchars($ol) ?>" class="op-logo" alt=""><?php endif; ?><a href="index.php?operator=<?= urlencode($r['operator']) ?>&amp;quick_range=all"><?= st_h($r['operator']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?>
                 <?php if (!$top_op): ?><tr><td colspan="3" class="muted">Nessuna compagnia identificata.</td></tr><?php endif; ?></table>
         </div>
@@ -195,7 +200,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Nazionalità</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_cc ?: [['n'=>1]]));
             foreach ($top_cc as $r): ?>
-                <tr><td><a href="index.php?country=<?= urlencode($r['country']) ?>"><?= fa_country_flag_html($r['country']) ?> <?= st_h($r['country']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><a href="index.php?country=<?= urlencode($r['country']) ?>&amp;quick_range=all"><?= fa_country_flag_html($r['country']) ?> <?= st_h($r['country']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 
@@ -204,7 +209,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_md ?: [['n'=>1]]));
             foreach ($top_md as $r): ?>
                 <?php $sil = fa_silhouette_path($r['model_t']); ?>
-                <tr><td><?php if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt=""><?php endif; ?><a href="index.php?model=<?= urlencode($r['model_t']) ?>"><?= st_h($r['model_t']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><?php if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt=""><?php endif; ?><a href="index.php?model=<?= urlencode($r['model_t']) ?>&amp;quick_range=all"><?= st_h($r['model_t']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 
@@ -212,7 +217,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Classifica registrazioni</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_rg ?: [['n'=>1]]));
             foreach ($top_rg as $r): ?>
-                <tr><td><a href="index.php?reg=<?= urlencode($r['reg']) ?>"><?= st_h($r['reg']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><a href="index.php?reg=<?= urlencode($r['reg']) ?>&amp;quick_range=all"><?= st_h($r['reg']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 
@@ -220,7 +225,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Squawk più frequenti</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_sq ?: [['n'=>1]]));
             foreach ($top_sq as $r): $em = in_array($r['squawk'], ['7500','7600','7700'], true); ?>
-                <tr><td><a href="index.php?squawk=<?= urlencode($r['squawk']) ?>"><?= st_h($r['squawk']) ?></a><?= $em ? ' <span class="mil-badge">⚠</span>' : '' ?></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <tr><td><a href="index.php?squawk=<?= urlencode($r['squawk']) ?>&amp;quick_range=all"><?= st_h($r['squawk']) ?></a><?= $em ? ' <span class="mil-badge">⚠</span>' : '' ?></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 
@@ -229,7 +234,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <table>
                 <tr><th>Data</th><th>ICAO</th><th>Sottotipo</th><th>Durata</th><th>Giri</th></tr>
                 <?php foreach ($longest as $r): ?>
-                <tr><td><?= st_h(fav_format_it($r['first_seen_utc'])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['subtype']) ?></td><td><?= st_dur($r['duration_s']) ?></td><td><?= $r['laps'] !== null ? (int)$r['laps'] : '—' ?></td></tr>
+                <tr><td><?= st_h(st_dt_short($r["first_seen_utc"])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['subtype']) ?></td><td><?= st_dur($r['duration_s']) ?></td><td><?= $r['laps'] !== null ? (int)$r['laps'] : '—' ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (!$longest): ?><tr><td colspan="5" class="muted">Nessun episodio con durata registrata.</td></tr><?php endif; ?>
             </table>
@@ -240,7 +245,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <table>
                 <tr><th>Data</th><th>ICAO</th><th>Sottotipo</th><th>Giri</th><th>Durata</th></tr>
                 <?php foreach ($mostlaps as $r): ?>
-                <tr><td><?= st_h(fav_format_it($r['first_seen_utc'])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['subtype']) ?></td><td><?= (int)$r['laps'] ?></td><td><?= st_dur($r['duration_s']) ?></td></tr>
+                <tr><td><?= st_h(st_dt_short($r["first_seen_utc"])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['subtype']) ?></td><td><?= (int)$r['laps'] ?></td><td><?= st_dur($r['duration_s']) ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (!$mostlaps): ?><tr><td colspan="5" class="muted">Nessun pattern con conteggio giri.</td></tr><?php endif; ?>
             </table>
@@ -272,7 +277,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
         <table>
             <tr><th>Data</th><th>ICAO</th><th>Callsign</th><th>Squawk</th><th>Note</th></tr>
             <?php foreach ($emergencies as $r): ?>
-            <tr><td><?= st_h(fav_format_it($r['first_seen_utc'])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['callsign']) ?></td><td><?= st_h($r['squawk']) ?></td><td><?= st_h($r['note']) ?></td></tr>
+            <tr><td><?= st_h(st_dt_short($r["first_seen_utc"])) ?></td><td><?= st_h($r['hex']) ?></td><td><?= st_h($r['callsign']) ?></td><td><?= st_h($r['squawk']) ?></td><td><?= st_h($r['note']) ?></td></tr>
             <?php endforeach; ?>
             <?php if (!$emergencies): ?><tr><td colspan="5" class="muted">Nessuno squawk di emergenza registrato.</td></tr><?php endif; ?>
         </table>

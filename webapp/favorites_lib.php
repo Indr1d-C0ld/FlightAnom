@@ -15,6 +15,8 @@ function fa_config(): array {
         $defaults = [
             // Percorso assoluto del database SQLite (events + favorites).
             'db_path'         => __DIR__ . '/db/events.db',
+            // Database utenti/sessioni (separato). Default: accanto a db_path.
+            'auth_db_path'    => __DIR__ . '/db/auth.db',
             // Base URL di un'istanza MilAir ITA per il link 🔍 nella lista eventi.
             // Vuoto = link non mostrato.
             'milair_base_url' => '',
