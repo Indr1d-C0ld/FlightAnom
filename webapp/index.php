@@ -59,7 +59,8 @@ if (!empty($_GET['event_type'])) {
     $params[] = $_GET['event_type'];
 }
 foreach (['hex' => 'hex', 'callsign' => 'callsign', 'reg' => 'reg',
-          'squawk' => 'squawk', 'model' => 'model_t'] as $qs => $col) {
+          'squawk' => 'squawk', 'model' => 'model_t',
+          'country' => 'country', 'operator' => 'operator'] as $qs => $col) {
     if (!empty($_GET[$qs])) {
         $where[] = "$col LIKE ?";
         $params[] = '%' . $_GET[$qs] . '%';
@@ -101,7 +102,9 @@ $sort_whitelist = [
     'type' => 'event_type',
     'subtype' => 'subtype',
     'icao' => 'hex',
+    'naz' => 'country',
     'callsign' => 'callsign',
+    'op' => 'operator',
     'reg' => 'reg',
     'model' => 'model_t',
     'squawk' => 'squawk',
@@ -155,7 +158,8 @@ try {
 
     // Query principale con LIMIT/OFFSET
     $sql = "SELECT id, first_seen_utc, last_seen_utc, hex, callsign, reg, model_t, squawk,
-                   event_type, subtype, note, confidence, is_mil, laps, duration_s
+                   event_type, subtype, note, confidence, is_mil, laps, duration_s,
+                   country, operator
             FROM events";
     if ($where) {
         $sql .= " WHERE " . implode(" AND ", $where);
@@ -181,6 +185,7 @@ try {
 }
 
 // Funzione per convertire data UTC in formato italiano (senza fuso)
+if (!function_exists('format_italian_datetime')):
 function format_italian_datetime($utc_str) {
     try {
         if (substr($utc_str, -4) === ' UTC') {
@@ -215,6 +220,7 @@ function page_url($page) {
     $params['page'] = $page;
     return '?' . http_build_query($params);
 }
+endif;
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -273,6 +279,8 @@ function page_url($page) {
         <input type="text" name="reg" placeholder="Registrazione" value="<?= htmlspecialchars($_GET['reg']??'') ?>">
         <input type="text" name="model" placeholder="Modello" value="<?= htmlspecialchars($_GET['model']??'') ?>">
         <input type="text" name="squawk" placeholder="Squawk" value="<?= htmlspecialchars($_GET['squawk']??'') ?>">
+        <input type="text" name="country" placeholder="Naz. (ISO2)" size="8" value="<?= htmlspecialchars($_GET['country']??'') ?>">
+        <input type="text" name="operator" placeholder="Compagnia (ICAO)" size="12" value="<?= htmlspecialchars($_GET['operator']??'') ?>">
         <input type="date" name="date_from" value="<?= htmlspecialchars($date_from) ?>">
         <input type="date" name="date_to" value="<?= htmlspecialchars($date_to) ?>">
         <label title="Confidenza minima">conf ≥
@@ -307,7 +315,9 @@ function page_url($page) {
                 <th><a href="<?= htmlspecialchars(sort_url('date', $sort, $dir)) ?>">Data <?= $sort=='date' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('type', $sort, $dir)) ?>">Tipo <?= $sort=='type' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('icao', $sort, $dir)) ?>">ICAO <?= $sort=='icao' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('naz', $sort, $dir)) ?>">Naz. <?= $sort=='naz' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('callsign', $sort, $dir)) ?>">Callsign <?= $sort=='callsign' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('op', $sort, $dir)) ?>">Compagnia <?= $sort=='op' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('reg', $sort, $dir)) ?>">Reg <?= $sort=='reg' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('model', $sort, $dir)) ?>">Modello <?= $sort=='model' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('squawk', $sort, $dir)) ?>">Squawk <?= $sort=='squawk' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
@@ -339,6 +349,7 @@ function page_url($page) {
                     <?php endif; ?>
                     <button class="copy-btn" onclick="copyText(this.dataset.copy)" data-copy="<?= htmlspecialchars($hex) ?>" title="Copia ICAO">📋</button>
                 </td>
+                <td data-label="Naz."><?php $cc = $ev['country'] ?? ''; ?><a href="?country=<?= urlencode($cc) ?>" title="Filtra per <?= htmlspecialchars($cc) ?>"><?= fa_country_flag_html($cc) ?></a> <span class="muted"><?= htmlspecialchars($cc) ?></span></td>
                 <td data-label="Callsign">
                     <?php if (!empty($callsign)): ?>
                         <a href="<?= htmlspecialchars($planespotters_url) ?>" target="_blank" title="Cerca <?= htmlspecialchars($callsign) ?> su Planespotters">
@@ -349,6 +360,7 @@ function page_url($page) {
                         <?= htmlspecialchars($callsign) ?>
                     <?php endif; ?>
                 </td>
+                <td data-label="Compagnia"><?php $op = $ev['operator'] ?? ''; if ($op !== ''): $opl = fa_operator_logo($op); ?><a href="?operator=<?= urlencode($op) ?>" title="Filtra per <?= htmlspecialchars($op) ?>"><?php if ($opl): ?><img src="<?= htmlspecialchars($opl) ?>" class="op-logo" alt=""><?php endif; ?><?= htmlspecialchars($op) ?></a><?php endif; ?></td>
                 <td data-label="Reg"><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
                 <td data-label="Modello"><?php $sil = fa_silhouette_path($ev['model_t'] ?? ''); if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt="" title="<?= htmlspecialchars($ev['model_t']) ?>"><?php endif; ?><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
                 <td data-label="Squawk"><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>

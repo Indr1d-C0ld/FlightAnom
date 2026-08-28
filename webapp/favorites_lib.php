@@ -122,6 +122,48 @@ function fa_silhouette_path(?string $type): ?string {
     return $memo[$safe] = $found;
 }
 
+/**
+ * HTML della bandiera nazione: <img flags/XX.svg> se disponibile, altrimenti
+ * emoji bandiera dai Regional Indicator Symbols, altrimenti 🏳️ per ZZ/ignoto.
+ */
+function fa_country_flag_html(?string $code): string {
+    $c = strtoupper(trim((string) $code));
+    if ($c === '' || $c === 'ZZ') {
+        return '<span title="Nazionalità non determinata">🏳️</span>';
+    }
+    if (preg_match('/^[A-Z]{2}$/', $c)) {
+        $svg = __DIR__ . '/flags/' . $c . '.svg';
+        if (is_file($svg)) {
+            return '<img src="flags/' . $c . '.svg" class="flag-icon" alt="' . $c . '" title="' . $c . '">';
+        }
+        $o = 0x1F1E6 - 65;
+        return '<span title="' . $c . '">' . mb_chr(ord($c[0]) + $o) . mb_chr(ord($c[1]) + $o) . '</span>';
+    }
+    return htmlspecialchars($c);
+}
+
+/**
+ * Percorso web del logo compagnia (VRS OperatorFlags) da opflags/<CODICE>.*,
+ * o null se assente. Popolato da download_opflags.php.
+ */
+function fa_operator_logo(?string $code): ?string {
+    static $memo = [];
+    $c = strtoupper(trim((string) $code));
+    if ($c === '' || !preg_match('/^[A-Z0-9]{2,4}$/', $c)) {
+        return null;
+    }
+    if (array_key_exists($c, $memo)) {
+        return $memo[$c];
+    }
+    foreach (['bmp', 'png', 'svg', 'gif'] as $ext) {
+        $f = __DIR__ . '/opflags/' . $c . '.' . $ext;
+        if (is_file($f) && filesize($f) > 0) {
+            return $memo[$c] = 'opflags/' . $c . '.' . $ext;
+        }
+    }
+    return $memo[$c] = null;
+}
+
 /** Data UTC memorizzata ("Y-m-d H:i:s UTC") -> "d/m/Y H:i:s" ora italiana. */
 function fav_format_it(?string $utc_str): string {
     $utc_str = (string)$utc_str;

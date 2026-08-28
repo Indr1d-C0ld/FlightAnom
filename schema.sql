@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS events (
     track_points    TEXT,                   -- JSON: [{"lat":..,"lon":..,"alt":..,"gs":..,"t":..}]
     screenshot_path TEXT,                   -- riservato, non popolato
     near_airport    INTEGER DEFAULT 0,
+    country         TEXT,                   -- ISO 3166-1 alpha-2 (blocco ICAO, poi reg/callsign); 'ZZ' se ignoto
+    operator        TEXT,                   -- codice compagnia ICAO (3 lettere) dal callsign, NULL se non di linea
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -47,6 +49,8 @@ CREATE INDEX IF NOT EXISTS idx_events_squawk     ON events(squawk);
 CREATE INDEX IF NOT EXISTS idx_events_model      ON events(model_t);
 CREATE INDEX IF NOT EXISTS idx_events_mil        ON events(is_mil);
 CREATE INDEX IF NOT EXISTS idx_events_conf       ON events(confidence);
+CREATE INDEX IF NOT EXISTS idx_events_country    ON events(country);
+CREATE INDEX IF NOT EXISTS idx_events_operator   ON events(operator);
 
 -- Preferiti: PER-EVENTO, con nota annotabile (una per evento).
 -- event_id -> events.id. Creata pigramente dalla webapp al primo uso.

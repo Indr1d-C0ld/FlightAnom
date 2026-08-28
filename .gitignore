@@ -27,3 +27,11 @@ venv/
 # Cache silhouette (rigenerabile con download_silhouettes.php)
 webapp/silhouettes/*
 !webapp/silhouettes/.gitkeep
+
+# Loghi compagnia VRS OperatorFlags (rigenerabili con download_opflags.php)
+webapp/opflags/*
+!webapp/opflags/.gitkeep
+
+# Bandiere nazione SVG (set esterno; fallback emoji se assenti)
+webapp/flags/*
+!webapp/flags/.gitkeep

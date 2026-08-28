@@ -149,6 +149,12 @@ $popup_json = json_encode([
                 </a>
             </td></tr>
             <tr><th>Callsign</th><td><?= htmlspecialchars($event['callsign']) ?></td></tr>
+            <tr><th>Compagnia</th><td>
+                <?php $op = $event['operator'] ?? ''; $opl = $op !== '' ? fa_operator_logo($op) : null; ?>
+                <?php if ($opl): ?><img src="<?= htmlspecialchars($opl) ?>" alt="" style="height:18px;vertical-align:middle;margin-right:6px;"><?php endif; ?>
+                <?= htmlspecialchars($op) ?>
+            </td></tr>
+            <tr><th>Nazionalità</th><td><?= fa_country_flag_html($event['country'] ?? '') ?> <?= htmlspecialchars($event['country'] ?? '') ?></td></tr>
             <tr><th>Registration</th><td><?= htmlspecialchars($event['reg']) ?></td></tr>
             <tr><th>Model</th><td>
                 <?php $sil = fa_silhouette_path($event['model_t']); if ($sil): ?>

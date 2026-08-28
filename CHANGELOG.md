@@ -58,6 +58,14 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- **Nazionalità e compagnia** per evento: nuove colonne `country`
+  (ISO2 dal blocco ICAO 24-bit / reg / callsign) e `operator` (codice
+  compagnia ICAO dal callsign). Filtrabili/ordinabili in `index.php`,
+  colonne *Naz.* (bandiera `flags/<ISO2>.svg` o emoji) e *Compagnia*
+  (logo `opflags/<CODICE>.bmp`), righe in `view.php`, classifiche
+  *Compagnie* e *Nazionalità* in `stats.php`. `download_opflags.php`
+  (`--zip` da rikgale/VRSOperatorFlags, o `OPFLAGS_SRC` per-file).
+  `flags/` e `opflags/` non versionati.
 - **Silhouette dei velivoli**: `fa_silhouette_path()` in `favorites_lib.php`;
   `index.php` (cella Modello), `view.php` e `stats.php` mostrano
   `silhouettes/<TIPO>.bmp` se presente. `download_silhouettes.php` (CLI/cron)

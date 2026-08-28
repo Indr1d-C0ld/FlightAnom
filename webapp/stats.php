@@ -67,6 +67,8 @@ try {
     $top_md = st_rows($pdo, "SELECT model_t, COUNT(*) n FROM events WHERE model_t IS NOT NULL AND model_t<>'' GROUP BY model_t ORDER BY n DESC LIMIT 15");
     $top_rg = st_rows($pdo, "SELECT reg, COUNT(*) n FROM events WHERE reg IS NOT NULL AND reg<>'' GROUP BY reg ORDER BY n DESC LIMIT 15");
     $top_sq = st_rows($pdo, "SELECT squawk, COUNT(*) n FROM events WHERE squawk IS NOT NULL AND squawk<>'' GROUP BY squawk ORDER BY n DESC LIMIT 15");
+    $top_op = st_rows($pdo, "SELECT operator, COUNT(*) n FROM events WHERE operator IS NOT NULL AND operator<>'' GROUP BY operator ORDER BY n DESC LIMIT 15");
+    $top_cc = st_rows($pdo, "SELECT COALESCE(NULLIF(country,''),'ZZ') country, COUNT(*) n FROM events GROUP BY 1 ORDER BY n DESC LIMIT 20");
     $near   = st_rows($pdo, "SELECT near_airport, COUNT(*) n FROM events GROUP BY near_airport");
     $longest = st_rows($pdo, "SELECT first_seen_utc, hex, callsign, subtype, duration_s, laps, confidence
                               FROM events WHERE duration_s IS NOT NULL AND duration_s > 0 ORDER BY duration_s DESC LIMIT 10");
@@ -177,6 +179,23 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_cs ?: [['n'=>1]]));
             foreach ($top_cs as $r): ?>
                 <tr><td><a href="index.php?callsign=<?= urlencode($r['callsign']) ?>"><?= st_h($r['callsign']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+            <?php endforeach; ?></table>
+        </div>
+
+        <div class="stats-card">
+            <h2>Classifica compagnie</h2>
+            <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_op ?: [['n'=>1]]));
+            foreach ($top_op as $r): $ol = fa_operator_logo($r['operator']); ?>
+                <tr><td><?php if ($ol): ?><img src="<?= htmlspecialchars($ol) ?>" class="op-logo" alt=""><?php endif; ?><a href="index.php?operator=<?= urlencode($r['operator']) ?>"><?= st_h($r['operator']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+            <?php endforeach; ?>
+                <?php if (!$top_op): ?><tr><td colspan="3" class="muted">Nessuna compagnia identificata.</td></tr><?php endif; ?></table>
+        </div>
+
+        <div class="stats-card">
+            <h2>Nazionalità</h2>
+            <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_cc ?: [['n'=>1]]));
+            foreach ($top_cc as $r): ?>
+                <tr><td><a href="index.php?country=<?= urlencode($r['country']) ?>"><?= fa_country_flag_html($r['country']) ?> <?= st_h($r['country']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 

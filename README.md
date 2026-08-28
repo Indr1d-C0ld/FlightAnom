@@ -46,6 +46,7 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile |
 | `webapp/download_silhouettes.php` | CLI: scarica le silhouette (stile VRS) dei tipi velivolo visti, in `silhouettes/` (via cron) |
+| `webapp/download_opflags.php` | CLI: popola `opflags/` con i loghi compagnia (VRS OperatorFlags), da zip o mirror per-file |
 | `webapp/api/events.php` | stessi eventi in JSON |
 | `webapp/config.sample.php` | modello di configurazione |
 | `schema.sql` | schema del database (di riferimento; il demone lo crea da sé) |
@@ -120,6 +121,30 @@ I priori militari/ISR incorporati si sovrascrivono con `monitor/priors.json`
 monitor/venv/bin/python3 monitor/flight_anom.py --selftest
 ```
 
+## Nazionalità e compagnie
+
+Il monitor deriva e salva per ogni evento:
+
+- **`country`** (ISO 3166-1 alpha-2) — dal **blocco ICAO 24-bit** dell'indirizzo
+  (tabella Annex 10 Vol III), con fallback su prefisso di immatricolazione e di
+  callsign; `ZZ` se non determinabile.
+- **`operator`** — codice compagnia ICAO a 3 lettere estratto dal callsign
+  quando è in stile linea (`^[A-Z]{3}\d`), altrimenti vuoto.
+
+Entrambi sono colonne filtrabili/ordinabili in `index.php` e alimentano nuove
+classifiche in `stats.php`. `index.php`/`view.php`/`stats.php` mostrano la
+**bandiera** (`flags/<ISO2>.svg`, con fallback a emoji) e il **logo compagnia**
+(`opflags/<CODICE>.bmp`) se presenti.
+
+- **Bandiere**: mettere un set di SVG ISO-2 in `flags/` (p.es.
+  [flag-icons](https://github.com/lipis/flag-icons), MIT). Senza, si usano le
+  emoji bandiera.
+- **Loghi compagnia**: `php webapp/download_opflags.php --zip OperatorFlags.zip`
+  con il pacchetto di
+  [rikgale/VRSOperatorFlags](https://github.com/rikgale/VRSOperatorFlags)
+  (GPL-3.0; dati aggiuntivi ODC-BY), oppure `OPFLAGS_SRC=` verso un mirror
+  per-file. Non versionati nel repo.
+
 ## Silhouette dei velivoli
 
 `index.php`, `view.php` e `stats.php` mostrano una piccola silhouette del tipo
@@ -140,8 +165,9 @@ può copiare a mano un pack esistente in `silhouettes/`.
 
 adsb.fi fornisce dati ADS-B aggregati dalla community, senza garanzie di
 copertura o continuità. Questo progetto non è affiliato con adsb.fi. Usare nel
-rispetto dei loro termini. Le silhouette scaricate restano soggette alle
-condizioni della sorgente da cui provengono.
+rispetto dei loro termini. Silhouette, loghi compagnia e bandiere scaricati
+restano soggetti alle condizioni delle rispettive sorgenti. La tabella dei
+blocchi ICAO→nazione deriva dall'Annex 10 Vol III (via `tar1090`).
 
 ## Licenza
 

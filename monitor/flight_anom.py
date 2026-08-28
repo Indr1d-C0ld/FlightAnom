@@ -99,6 +99,138 @@ AIRLINER_TYPES = {
     "MD82", "MD83", "MD88", "MD90", "F70", "F100", "RJ85", "RJ1H",
 }
 
+# ===========================================================================
+# Nazionalita' (ICAO 24-bit block -> ISO2) e operatore (codice compagnia ICAO)
+# ===========================================================================
+ICAO_RANGES = [  # (start, end, ISO2) - Annex 10 Vol III, via tar1090 flags.js
+    (0x004000,0x0047FF,'ZW'), (0x006000,0x006FFF,'MZ'), (0x008000,0x00FFFF,'ZA'), (0x010000,0x017FFF,'EG'),
+    (0x018000,0x01FFFF,'LY'), (0x020000,0x027FFF,'MA'), (0x028000,0x02FFFF,'TN'), (0x030000,0x0307FF,'BW'),
+    (0x032000,0x032FFF,'BI'), (0x034000,0x034FFF,'CM'), (0x035000,0x0357FF,'KM'), (0x036000,0x036FFF,'CG'),
+    (0x038000,0x038FFF,'CI'), (0x03E000,0x03EFFF,'GA'), (0x040000,0x040FFF,'ET'), (0x042000,0x042FFF,'GQ'),
+    (0x044000,0x044FFF,'GH'), (0x046000,0x046FFF,'GN'), (0x048000,0x0487FF,'GW'), (0x04A000,0x04A7FF,'LS'),
+    (0x04C000,0x04CFFF,'KE'), (0x050000,0x050FFF,'LR'), (0x054000,0x054FFF,'MG'), (0x058000,0x058FFF,'MW'),
+    (0x05A000,0x05A7FF,'MV'), (0x05C000,0x05CFFF,'ML'), (0x05E000,0x05E7FF,'MR'), (0x060000,0x0607FF,'MU'),
+    (0x062000,0x062FFF,'NE'), (0x064000,0x064FFF,'NG'), (0x068000,0x068FFF,'UG'), (0x06A000,0x06AFFF,'QA'),
+    (0x06C000,0x06CFFF,'CF'), (0x06E000,0x06EFFF,'RW'), (0x070000,0x070FFF,'SN'), (0x074000,0x0747FF,'SC'),
+    (0x076000,0x0767FF,'SL'), (0x078000,0x078FFF,'SO'), (0x07A000,0x07A7FF,'SZ'), (0x07C000,0x07CFFF,'SD'),
+    (0x080000,0x080FFF,'TZ'), (0x084000,0x084FFF,'TD'), (0x088000,0x088FFF,'TG'), (0x08A000,0x08AFFF,'ZM'),
+    (0x08C000,0x08CFFF,'CD'), (0x090000,0x090FFF,'AO'), (0x094000,0x0947FF,'BJ'), (0x096000,0x0967FF,'CV'),
+    (0x098000,0x0987FF,'DJ'), (0x09A000,0x09AFFF,'GM'), (0x09C000,0x09CFFF,'BF'), (0x09E000,0x09E7FF,'ST'),
+    (0x0A0000,0x0A7FFF,'DZ'), (0x0A8000,0x0A8FFF,'BS'), (0x0AA000,0x0AA7FF,'BB'), (0x0AB000,0x0AB7FF,'BZ'),
+    (0x0AC000,0x0ADFFF,'CO'), (0x0AE000,0x0AEFFF,'CR'), (0x0B0000,0x0B0FFF,'CU'), (0x0B2000,0x0B2FFF,'SV'),
+    (0x0B4000,0x0B4FFF,'GT'), (0x0B6000,0x0B6FFF,'GY'), (0x0B8000,0x0B8FFF,'HT'), (0x0BA000,0x0BAFFF,'HN'),
+    (0x0BC000,0x0BC7FF,'VC'), (0x0BE000,0x0BEFFF,'JM'), (0x0C0000,0x0C0FFF,'NI'), (0x0C2000,0x0C2FFF,'PA'),
+    (0x0C4000,0x0C4FFF,'DO'), (0x0C6000,0x0C6FFF,'TT'), (0x0C8000,0x0C8FFF,'SR'), (0x0CA000,0x0CA7FF,'AG'),
+    (0x0CC000,0x0CC7FF,'GD'), (0x0D0000,0x0D7FFF,'MX'), (0x0D8000,0x0DFFFF,'VE'), (0x100000,0x1FFFFF,'RU'),
+    (0x201000,0x2017FF,'NA'), (0x202000,0x2027FF,'ER'), (0x300000,0x33FFFF,'IT'), (0x340000,0x37FFFF,'ES'),
+    (0x380000,0x3BFFFF,'FR'), (0x3C0000,0x3FFFFF,'DE'), (0x400000,0x4001BF,'BM'), (0x400000,0x43FFFF,'GB'),
+    (0x4001C0,0x4001FF,'KY'), (0x400300,0x4003FF,'TC'), (0x424135,0x4241F2,'KY'), (0x424200,0x4246FF,'BM'),
+    (0x424700,0x424899,'KY'), (0x424B00,0x424BFF,'IM'), (0x43BE00,0x43BEFF,'BM'), (0x43E700,0x43EAFD,'IM'),
+    (0x43EAFE,0x43EEFF,'GG'), (0x440000,0x447FFF,'AT'), (0x448000,0x44FFFF,'BE'), (0x450000,0x457FFF,'BG'),
+    (0x458000,0x45FFFF,'DK'), (0x460000,0x467FFF,'FI'), (0x468000,0x46FFFF,'GR'), (0x470000,0x477FFF,'HU'),
+    (0x478000,0x47FFFF,'NO'), (0x480000,0x487FFF,'NL'), (0x488000,0x48FFFF,'PL'), (0x490000,0x497FFF,'PT'),
+    (0x498000,0x49FFFF,'CZ'), (0x4A0000,0x4A7FFF,'RO'), (0x4A8000,0x4AFFFF,'SE'), (0x4B0000,0x4B7FFF,'CH'),
+    (0x4B8000,0x4BFFFF,'TR'), (0x4C0000,0x4C7FFF,'RS'), (0x4C8000,0x4C87FF,'CY'), (0x4CA000,0x4CAFFF,'IE'),
+    (0x4CC000,0x4CCFFF,'IS'), (0x4D0000,0x4D07FF,'LU'), (0x4D2000,0x4D27FF,'MT'), (0x4D4000,0x4D47FF,'MC'),
+    (0x500000,0x5007FF,'SM'), (0x501000,0x5017FF,'AL'), (0x501800,0x501FFF,'HR'), (0x502800,0x502FFF,'LV'),
+    (0x503800,0x503FFF,'LT'), (0x504800,0x504FFF,'MD'), (0x505800,0x505FFF,'SK'), (0x506800,0x506FFF,'SI'),
+    (0x507800,0x507FFF,'UZ'), (0x508000,0x50FFFF,'UA'), (0x510000,0x5107FF,'BY'), (0x511000,0x5117FF,'EE'),
+    (0x512000,0x5127FF,'MK'), (0x513000,0x5137FF,'BA'), (0x514000,0x5147FF,'GE'), (0x515000,0x5157FF,'TJ'),
+    (0x516000,0x5167FF,'ME'), (0x600000,0x6007FF,'AM'), (0x600800,0x600FFF,'AZ'), (0x601000,0x6017FF,'KG'),
+    (0x601800,0x601FFF,'TM'), (0x680000,0x6807FF,'BT'), (0x681000,0x6817FF,'FM'), (0x682000,0x6827FF,'MN'),
+    (0x683000,0x6837FF,'KZ'), (0x684000,0x6847FF,'PW'), (0x700000,0x700FFF,'AF'), (0x702000,0x702FFF,'BD'),
+    (0x704000,0x704FFF,'MM'), (0x706000,0x706FFF,'KW'), (0x708000,0x708FFF,'LA'), (0x70A000,0x70AFFF,'NP'),
+    (0x70C000,0x70C7FF,'OM'), (0x70E000,0x70EFFF,'KH'), (0x710000,0x717FFF,'SA'), (0x718000,0x71FFFF,'KR'),
+    (0x720000,0x727FFF,'KP'), (0x728000,0x72FFFF,'IQ'), (0x730000,0x737FFF,'IR'), (0x738000,0x73FFFF,'IL'),
+    (0x740000,0x747FFF,'JO'), (0x748000,0x74FFFF,'LB'), (0x750000,0x757FFF,'MY'), (0x758000,0x75FFFF,'PH'),
+    (0x760000,0x767FFF,'PK'), (0x768000,0x76FFFF,'SG'), (0x770000,0x777FFF,'LK'), (0x778000,0x77FFFF,'SY'),
+    (0x780000,0x7BFFFF,'CN'), (0x789000,0x789FFF,'HK'), (0x7C0000,0x7FFFFF,'AU'), (0x800000,0x83FFFF,'IN'),
+    (0x840000,0x87FFFF,'JP'), (0x880000,0x887FFF,'TH'), (0x888000,0x88FFFF,'VN'), (0x890000,0x890FFF,'YE'),
+    (0x894000,0x894FFF,'BH'), (0x895000,0x8957FF,'BN'), (0x896000,0x896FFF,'AE'), (0x897000,0x8977FF,'SB'),
+    (0x898000,0x898FFF,'PG'), (0x899000,0x8997FF,'TW'), (0x8A0000,0x8A7FFF,'ID'), (0x900000,0x9007FF,'MH'),
+    (0x901000,0x9017FF,'SK'), (0x902000,0x9027FF,'WS'), (0xA00000,0xAFFFFF,'US'), (0xC00000,0xC3FFFF,'CA'),
+    (0xC80000,0xC87FFF,'NZ'), (0xC88000,0xC88FFF,'FJ'), (0xC8A000,0xC8A7FF,'NR'), (0xC8C000,0xC8C7FF,'LC'),
+    (0xC8D000,0xC8D7FF,'TO'), (0xC8E000,0xC8E7FF,'KI'), (0xC90000,0xC907FF,'VU'), (0xC91000,0xC917FF,'AD'),
+    (0xC92000,0xC927FF,'DM'), (0xC93000,0xC937FF,'KN'), (0xC94000,0xC947FF,'SS'), (0xC95000,0xC957FF,'TL'),
+    (0xC97000,0xC977FF,'TV'), (0xE00000,0xE3FFFF,'AR'), (0xE40000,0xE7FFFF,'BR'), (0xE80000,0xE80FFF,'CL'),
+    (0xE84000,0xE84FFF,'EC'), (0xE88000,0xE88FFF,'PY'), (0xE8C000,0xE8CFFF,'PE'), (0xE90000,0xE90FFF,'UY'),
+    (0xE94000,0xE94FFF,'BO'),
+]
+
+# Prefisso di immatricolazione -> ISO2 (ordine: piu' specifici prima).
+REG_PREFIX_COUNTRY = {
+    "MM": "IT", "I-": "IT", "F-": "FR", "D-": "DE", "G-": "GB",
+    "EC-": "ES", "PH-": "NL", "OO-": "BE", "HB-": "CH", "OE-": "AT",
+    "OK-": "CZ", "OM-": "SK", "SP-": "PL", "HA-": "HU", "YR-": "RO",
+    "LZ-": "BG", "9A-": "HR", "S5-": "SI", "YU-": "RS", "Z3-": "MK",
+    "T7-": "SM", "3A-": "MC", "9H-": "MT", "5B-": "CY", "TC-": "TR",
+    "4X-": "IL", "SU-": "EG", "5A-": "LY", "CN-": "MA", "7T-": "DZ",
+    "TS-": "TN", "JY-": "JO", "OD-": "LB", "YK-": "SY", "EP-": "IR",
+    "A6-": "AE", "A7-": "QA", "9K-": "KW", "VT-": "IN", "AP-": "PK",
+    "JA-": "JP", "HL-": "KR", "HS-": "TH", "VN-": "VN",
+    "9V-": "SG", "PK-": "ID", "9M-": "MY", "RP-": "PH", "ZK-": "NZ",
+    "VH-": "AU", "C-": "CA", "XA-": "MX", "XB-": "MX", "XC-": "MX",
+    "PT-": "BR", "PR-": "BR", "PP-": "BR", "LV-": "AR", "CC-": "CL",
+    "HK-": "CO", "OB-": "PE", "YV-": "VE", "TI-": "CR", "TG-": "GT",
+    "HR-": "HN", "YS-": "SV", "YN-": "NI", "HP-": "PA", "CU-": "CU",
+    "HI-": "DO", "V2-": "AG", "8P-": "BB", "J3-": "GD", "9Y-": "TT",
+    "PJ-": "SX", "B-": "CN", "N": "US",
+}
+
+# Prefisso di callsign (soprattutto militare/stato) -> ISO2.
+CALLSIGN_PREFIX_COUNTRY = {
+    "IAM": "IT", "RCH": "US", "CNV": "US", "CTM": "FR", "PLF": "PL",
+    "GAF": "DE", "BAF": "BE", "HUAF": "HU", "ROF": "RO", "CZE": "CZ",
+    "RRR": "GB", "RRS": "GB", "NATO": "ZZ",
+}
+
+
+def country_from_hex(hx):
+    try:
+        v = int(hx, 16)
+    except (TypeError, ValueError):
+        return None
+    for s, e, cc in ICAO_RANGES:
+        if s <= v <= e:
+            return cc
+    return None
+
+
+def country_from_reg(reg):
+    if not reg:
+        return None
+    r = reg.strip().upper()
+    for pfx, cc in REG_PREFIX_COUNTRY.items():
+        if r.startswith(pfx):
+            return cc
+    return None
+
+
+def country_from_callsign(cs):
+    if not cs:
+        return None
+    c = cs.strip().upper()
+    for pfx, cc in CALLSIGN_PREFIX_COUNTRY.items():
+        if c.startswith(pfx):
+            return cc
+    return None
+
+
+def resolve_country(hx, reg, callsign):
+    """ISO 3166-1 alpha-2, o 'ZZ' se non determinabile. hex (blocco ICAO)
+    e' la fonte primaria; reg e callsign i fallback."""
+    return (country_from_hex(hx)
+            or country_from_reg(reg)
+            or country_from_callsign(callsign)
+            or "ZZ")
+
+
+def operator_from_callsign(cs):
+    """Codice compagnia ICAO (3 lettere) se il callsign e' in stile linea."""
+    c = (cs or "").strip().upper()
+    return c[:3] if AIRLINE_CS_RE.match(c) else None
+
+
 
 def load_priors_override(script_dir: str) -> None:
     global MIL_HEX_PREFIXES, MIL_CS_RE, ISR_TYPES
@@ -755,6 +887,8 @@ NEW_COLUMNS = [
     ("duration_s", "INTEGER"),
     ("updates", "INTEGER DEFAULT 1"),
     ("near_airport", "INTEGER DEFAULT 0"),
+    ("country", "TEXT"),
+    ("operator", "TEXT"),
 ]
 
 INDEXES = [
@@ -769,6 +903,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_model      ON events(model_t)",
     "CREATE INDEX IF NOT EXISTS idx_events_mil        ON events(is_mil)",
     "CREATE INDEX IF NOT EXISTS idx_events_conf       ON events(confidence)",
+    "CREATE INDEX IF NOT EXISTS idx_events_country    ON events(country)",
+    "CREATE INDEX IF NOT EXISTS idx_events_operator   ON events(operator)",
 ]
 
 
@@ -802,6 +938,8 @@ def init_db():
             updates INTEGER DEFAULT 1,
             track_points TEXT,
             near_airport INTEGER DEFAULT 0,
+            country TEXT,
+            operator TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -831,28 +969,32 @@ def episode_upsert(conn, episodes: dict, key, now_ts: float, now_str: str,
                    near_flag: int, episode_gap_s: float) -> Tuple[int, bool]:
     dur = int(seg[-1].t - seg[0].t) if len(seg) >= 2 else 0
     tj = track_json(seg)
+    country = resolve_country(ac.hex, ac.reg, ac.flight)
+    operator = operator_from_callsign(ac.flight)
     ep = episodes.get(key)
     if ep and now_ts - ep["last_ts"] <= episode_gap_s:
         conn.execute("""
             UPDATE events SET last_seen_utc=?, lat=?, lon=?, alt_baro=?, gs=?, squawk=?,
                    callsign=?, reg=?, model_t=?, is_mil=?, note=?, confidence=?, laps=?,
-                   duration_s=?, updates=updates+1, track_points=?, near_airport=?
+                   duration_s=?, updates=updates+1, track_points=?, near_airport=?,
+                   country=?, operator=?
             WHERE id=?
         """, (now_str, ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk,
               ac.flight, ac.reg, ac.model_t, 1 if ac.is_mil else 0, note, confidence,
-              laps, dur, tj, near_flag, ep["id"]))
+              laps, dur, tj, near_flag, country, operator, ep["id"]))
         conn.commit()
         ep["last_ts"] = now_ts
         return ep["id"], False
     cur = conn.execute("""
         INSERT INTO events (first_seen_utc, last_seen_utc, hex, callsign, reg, model_t,
                lat, lon, alt_baro, gs, squawk, ground, is_mil, event_type, subtype, note,
-               confidence, laps, duration_s, updates, track_points, near_airport)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
+               confidence, laps, duration_s, updates, track_points, near_airport,
+               country, operator)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)
     """, (now_str, now_str, ac.hex, ac.flight, ac.reg, ac.model_t,
           ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk, 1 if ac.ground else 0,
           1 if ac.is_mil else 0, event_type, subtype, note, confidence, laps, dur,
-          tj, near_flag))
+          tj, near_flag, country, operator))
     conn.commit()
     eid = cur.lastrowid
     episodes[key] = {"id": eid, "first_ts": now_ts, "last_ts": now_ts}
@@ -975,6 +1117,15 @@ def selftest() -> int:
     ac2 = Aircraft("3c1234", "DLH123", 43, 11, 36000, 450, time.time(), model_t="A320")
     _, pr2, _ = prior_score(ac2)
     checks.append(("prior civ ~0", pr2 == 0.0))
+
+    # --- nazionalita' / operatore ---
+    checks.append(("country hex IT", resolve_country("30a1b2", None, None) == "IT"))
+    checks.append(("country hex DE", resolve_country("3c48aa", None, None) == "DE"))
+    checks.append(("country hex US", resolve_country("a1b2c3", None, None) == "US"))
+    checks.append(("country reg fallback", resolve_country("ffffff", "I-ABCD", None) == "IT"))
+    checks.append(("country ignoto -> ZZ", resolve_country("ffffff", None, None) == "ZZ"))
+    checks.append(("operator RYR", operator_from_callsign("RYR86FZ") == "RYR"))
+    checks.append(("operator GA -> None", operator_from_callsign("N12345") is None))
 
     # --- discriminante holding / traffico ordinario ---
     def _seg(gen, n, dt=30.0, alt0=25000, alt1=None, gs=200.0):
