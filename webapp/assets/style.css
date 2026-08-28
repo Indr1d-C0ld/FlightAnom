@@ -29,6 +29,8 @@ a { color: #007BFF; text-decoration: none; }
 .model-silhouette { height: 18px; width: auto; vertical-align: middle; margin-right: 5px; }
 .flag-icon { height: 13px; width: auto; vertical-align: middle; }
 .op-logo { height: 16px; width: auto; vertical-align: middle; margin-right: 4px; }
+.autorefresh { margin: 6px 0 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.autorefresh select { padding: 4px; }
 .mil-badge { color: #b23b3b; font-weight: bold; }
 .conf { display: inline-block; padding: 1px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
 .conf-hi { background: #d4edda; color: #155724; }

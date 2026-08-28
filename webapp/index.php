@@ -308,6 +308,19 @@ endif;
         </div>
     </form>
 
+    <div class="autorefresh">
+        <label><input type="checkbox" id="ar-toggle"> Auto-aggiorna</label>
+        <select id="ar-interval" aria-label="Intervallo di aggiornamento">
+            <option value="10">10 s</option>
+            <option value="30">30 s</option>
+            <option value="60">1 min</option>
+            <option value="120">2 min</option>
+            <option value="300">5 min</option>
+        </select>
+        <span id="ar-status" class="muted"></span>
+    </div>
+
+    <div id="events-region">
     <div class="table-scroll">
     <table class="cards">
         <thead>
@@ -421,6 +434,7 @@ endif;
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    </div><!-- /#events-region -->
 </div>
 
 <script>
@@ -466,6 +480,62 @@ document.addEventListener('click', e => {
     .catch(() => alert('Errore di rete.'))
     .finally(() => { btn.disabled = false; });
 });
+
+// --- Auto-aggiornamento della tabella (client-side, preferenza in localStorage) ---
+(function () {
+    const KEY = 'fa_autorefresh';
+    const toggle = document.getElementById('ar-toggle');
+    const sel = document.getElementById('ar-interval');
+    const statusEl = document.getElementById('ar-status');
+    const region = document.getElementById('events-region');
+    if (!toggle || !sel || !region) return;
+    let timer = null, busy = false;
+
+    const now = () => new Date().toLocaleTimeString('it-IT');
+    function save() {
+        try { localStorage.setItem(KEY, JSON.stringify({on: toggle.checked, sec: +sel.value})); } catch (e) {}
+    }
+    function refresh() {
+        if (busy || document.hidden) return;
+        busy = true;
+        const sy = window.scrollY;
+        const ts = region.querySelector('.table-scroll');
+        const tx = ts ? ts.scrollLeft : 0;
+        fetch(window.location.href, {headers: {'X-Requested-With': 'fetch'}, cache: 'no-store'})
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+            .then(html => {
+                const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('events-region');
+                if (!fresh) throw new Error('regione assente');
+                region.innerHTML = fresh.innerHTML;
+                const nts = region.querySelector('.table-scroll');
+                if (nts) nts.scrollLeft = tx;
+                window.scrollTo(0, sy);
+                statusEl.textContent = 'aggiornato ' + now();
+            })
+            .catch(() => { statusEl.textContent = 'aggiornamento non riuscito ' + now(); })
+            .finally(() => { busy = false; });
+    }
+    function apply() {
+        if (timer) { clearInterval(timer); timer = null; }
+        save();
+        if (toggle.checked) {
+            const sec = Math.max(5, +sel.value || 30);
+            timer = setInterval(refresh, sec * 1000);
+            statusEl.textContent = 'auto ogni ' + (sec >= 60 ? (sec / 60) + ' min' : sec + ' s');
+        } else {
+            statusEl.textContent = '';
+        }
+    }
+    try {
+        const p = JSON.parse(localStorage.getItem(KEY) || '{}');
+        toggle.checked = !!p.on;
+        if (p.sec && sel.querySelector('option[value="' + p.sec + '"]')) sel.value = String(p.sec);
+    } catch (e) {}
+    toggle.addEventListener('change', apply);
+    sel.addEventListener('change', apply);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && toggle.checked) refresh(); });
+    apply();
+})();
 </script>
 </body>
 </html>

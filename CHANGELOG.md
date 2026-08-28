@@ -58,6 +58,11 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- **Auto-aggiornamento** opzionale della tabella eventi (`index.php`):
+  casella + intervallo regolabile (10 s / 30 s / 1-2-5 min), preferenza in
+  `localStorage`. Ricarica solo la regione `#events-region` via `fetch`
+  dell'URL corrente (mantiene filtri/ordinamento/pagina, scroll e posizione),
+  in pausa quando la scheda non è visibile.
 - **Nazionalità e compagnia** per evento: nuove colonne `country`
   (ISO2 dal blocco ICAO 24-bit / reg / callsign) e `operator` (codice
   compagnia ICAO dal callsign). Filtrabili/ordinabili in `index.php`,
