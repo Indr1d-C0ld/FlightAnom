@@ -184,7 +184,8 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
             <h2>Classifica modelli</h2>
             <table><?php $mx = max(array_map(fn($r) => (int)$r['n'], $top_md ?: [['n'=>1]]));
             foreach ($top_md as $r): ?>
-                <tr><td><a href="index.php?model=<?= urlencode($r['model_t']) ?>"><?= st_h($r['model_t']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
+                <?php $sil = fa_silhouette_path($r['model_t']); ?>
+                <tr><td><?php if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt=""><?php endif; ?><a href="index.php?model=<?= urlencode($r['model_t']) ?>"><?= st_h($r['model_t']) ?></a></td><td><?= number_format($r['n']) ?></td><td><?= st_bar($r['n'], $mx, 90) ?></td></tr>
             <?php endforeach; ?></table>
         </div>
 

@@ -23,3 +23,7 @@ venv/
 
 # Sistema
 .DS_Store
+
+# Cache silhouette (rigenerabile con download_silhouettes.php)
+webapp/silhouettes/*
+!webapp/silhouettes/.gitkeep

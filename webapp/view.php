@@ -150,7 +150,12 @@ $popup_json = json_encode([
             </td></tr>
             <tr><th>Callsign</th><td><?= htmlspecialchars($event['callsign']) ?></td></tr>
             <tr><th>Registration</th><td><?= htmlspecialchars($event['reg']) ?></td></tr>
-            <tr><th>Model</th><td><?= htmlspecialchars($event['model_t']) ?></td></tr>
+            <tr><th>Model</th><td>
+                <?php $sil = fa_silhouette_path($event['model_t']); if ($sil): ?>
+                    <img src="<?= htmlspecialchars($sil) ?>" alt="" style="height:26px;width:auto;vertical-align:middle;margin-right:8px;">
+                <?php endif; ?>
+                <?= htmlspecialchars($event['model_t']) ?>
+            </td></tr>
             <tr><th>Tipo evento</th><td><?= htmlspecialchars($event['event_type']) ?></td></tr>
             <tr><th>Note</th><td><?= htmlspecialchars($event['note']) ?></td></tr>
             <tr><th>Squawk</th><td><?= htmlspecialchars($event['squawk']) ?></td></tr>

@@ -26,6 +26,7 @@ a { color: #007BFF; text-decoration: none; }
 
 .table-scroll { overflow-x: auto; }
 .muted { color: #6c757d; font-size: 0.85em; }
+.model-silhouette { height: 18px; width: auto; vertical-align: middle; margin-right: 5px; }
 .mil-badge { color: #b23b3b; font-weight: bold; }
 .conf { display: inline-block; padding: 1px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
 .conf-hi { background: #d4edda; color: #155724; }

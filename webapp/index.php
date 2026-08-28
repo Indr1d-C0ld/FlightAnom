@@ -350,7 +350,7 @@ function page_url($page) {
                     <?php endif; ?>
                 </td>
                 <td data-label="Reg"><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
-                <td data-label="Modello"><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
+                <td data-label="Modello"><?php $sil = fa_silhouette_path($ev['model_t'] ?? ''); if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt="" title="<?= htmlspecialchars($ev['model_t']) ?>"><?php endif; ?><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
                 <td data-label="Squawk"><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
                 <td data-label="Conf"><?php if ($conf !== null && $conf !== ''): ?><span class="conf conf-<?= $conf >= 0.7 ? 'hi' : ($conf >= 0.4 ? 'mid' : 'lo') ?>"><?= number_format((float)$conf, 2) ?></span><?php endif; ?></td>
                 <td data-label="Note"><?= htmlspecialchars($ev['note']) ?></td>

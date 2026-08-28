@@ -82,6 +82,46 @@ function fav_valid_id($id): bool {
     return ctype_digit((string) $id) && (int) $id > 0;
 }
 
+/**
+ * Percorso web (relativo alla webapp) della silhouette del tipo velivolo, se
+ * presente in silhouettes/. Le silhouette (formato VRS/VirtualRadar, ~85x20)
+ * sono popolate da download_silhouettes.php. Ritorna null se assente.
+ */
+function fa_silhouette_path(?string $type): ?string {
+    static $memo = [];
+    if (empty($type)) {
+        return null;
+    }
+    $safe = preg_replace('/[^A-Za-z0-9_\-]/', '', strtoupper(trim($type)));
+    if ($safe === '') {
+        return null;
+    }
+    if (array_key_exists($safe, $memo)) {
+        return $memo[$safe];
+    }
+    // Qualche alias fra designatori ICAO e nomi-file diffusi.
+    static $alias = [
+        'M345' => ['M345', 'M-345'],
+        'M346' => ['M346', 'M-346'],
+        'E390' => ['E390', 'C390', 'KC390'],
+        'FA6X' => ['FA6X', 'F6X'],
+        'GA6C' => ['GA6C', 'G600'],
+        'HRON' => ['HRON', 'HERON'],
+    ];
+    $cands = $alias[$safe] ?? [$safe];
+    $found = null;
+    foreach ($cands as $c) {
+        foreach (['bmp', 'png', 'svg', 'gif'] as $ext) {
+            $f = __DIR__ . '/silhouettes/' . $c . '.' . $ext;
+            if (is_file($f) && filesize($f) > 0) {
+                $found = 'silhouettes/' . $c . '.' . $ext;
+                break 2;
+            }
+        }
+    }
+    return $memo[$safe] = $found;
+}
+
 /** Data UTC memorizzata ("Y-m-d H:i:s UTC") -> "d/m/Y H:i:s" ora italiana. */
 function fav_format_it(?string $utc_str): string {
     $utc_str = (string)$utc_str;

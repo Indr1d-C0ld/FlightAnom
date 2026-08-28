@@ -58,6 +58,11 @@
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.
+- **Silhouette dei velivoli**: `fa_silhouette_path()` in `favorites_lib.php`;
+  `index.php` (cella Modello), `view.php` e `stats.php` mostrano
+  `silhouettes/<TIPO>.bmp` se presente. `download_silhouettes.php` (CLI/cron)
+  scarica i tipi mancanti da flightdb.net (o `$SILHOUETTE_SRC`). Le silhouette
+  non sono versionate (`.gitignore`). `deploy/crontab.sample`.
 
 ### Sicurezza / robustezza
 - `api/events.php`: filtri data allineati alla webapp (Europe/Rome→UTC), niente

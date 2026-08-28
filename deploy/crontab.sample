@@ -1,0 +1,9 @@
+# Flight Anomaly Monitor - attivita' periodiche.
+# Aggiungere al crontab dell'utente che possiede il deployment (crontab -e),
+# oppure a /etc/cron.d/flight-anom. Adattare i percorsi.
+
+# Ogni 6 ore: scarica le silhouette mancanti per i tipi velivolo visti negli eventi
+0 */6 * * *  /usr/bin/php /opt/flight_anom/download_silhouettes.php >> /opt/flight_anom/silhouettes.log 2>&1
+
+# (facoltativo) sorgente alternativa delle silhouette:
+#   SILHOUETTE_SRC=https://mio-mirror/silhouettes/  (deve terminare con /)

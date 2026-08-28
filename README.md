@@ -45,10 +45,11 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/view.php` | dettaglio evento + mappa della traccia |
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile |
+| `webapp/download_silhouettes.php` | CLI: scarica le silhouette (stile VRS) dei tipi velivolo visti, in `silhouettes/` (via cron) |
 | `webapp/api/events.php` | stessi eventi in JSON |
 | `webapp/config.sample.php` | modello di configurazione |
 | `schema.sql` | schema del database (di riferimento; il demone lo crea da sé) |
-| `deploy/` | esempi di unit `systemd`, `.htaccess`, script permessi |
+| `deploy/` | esempi di unit `systemd`, `.htaccess`, `crontab`, script permessi |
 
 ## Installazione
 
@@ -119,11 +120,28 @@ I priori militari/ISR incorporati si sovrascrivono con `monitor/priors.json`
 monitor/venv/bin/python3 monitor/flight_anom.py --selftest
 ```
 
+## Silhouette dei velivoli
+
+`index.php`, `view.php` e `stats.php` mostrano una piccola silhouette del tipo
+velivolo (formato VRS/VirtualRadar, ~85×20) se il file
+`silhouettes/<TIPO>.bmp` è presente. Le silhouette **non** sono nel repo: si
+popolano con
+
+```bash
+php webapp/download_silhouettes.php          # scarica i tipi mancanti visti negli eventi
+```
+
+da schedulare via cron (vedi `deploy/crontab.sample`). Sorgente predefinita
+`flightdb.net`, sovrascrivibile con la variabile d'ambiente `SILHOUETTE_SRC`
+(p.es. un mirror del pack silhouette di VirtualRadarServer). In alternativa si
+può copiare a mano un pack esistente in `silhouettes/`.
+
 ## Dati
 
 adsb.fi fornisce dati ADS-B aggregati dalla community, senza garanzie di
 copertura o continuità. Questo progetto non è affiliato con adsb.fi. Usare nel
-rispetto dei loro termini.
+rispetto dei loro termini. Le silhouette scaricate restano soggette alle
+condizioni della sorgente da cui provengono.
 
 ## Licenza
 
