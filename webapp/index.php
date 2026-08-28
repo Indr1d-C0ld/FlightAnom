@@ -220,6 +220,7 @@ function page_url($page) {
 <html lang="it">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrf_token()) ?>">
     <title>Flight Anomaly Monitor</title>
     <link rel="stylesheet" href="assets/style.css">
@@ -300,7 +301,7 @@ function page_url($page) {
     </form>
 
     <div class="table-scroll">
-    <table>
+    <table class="cards">
         <thead>
             <tr>
                 <th><a href="<?= htmlspecialchars(sort_url('date', $sort, $dir)) ?>">Data <?= $sort=='date' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
@@ -326,9 +327,9 @@ function page_url($page) {
                 $tipo = $ev['event_type'] . (!empty($ev['subtype']) ? ' · ' . $ev['subtype'] : '');
             ?>
             <tr>
-                <td><?= htmlspecialchars(format_italian_datetime($ev['first_seen_utc'])) ?></td>
-                <td><?= htmlspecialchars($tipo) ?><?php if (!empty($ev['laps'])): ?> <span class="muted">(<?= (int)$ev['laps'] ?> giri)</span><?php endif; ?></td>
-                <td>
+                <td data-label="Data"><?= htmlspecialchars(format_italian_datetime($ev['first_seen_utc'])) ?></td>
+                <td data-label="Tipo"><?= htmlspecialchars($tipo) ?><?php if (!empty($ev['laps'])): ?> <span class="muted">(<?= (int)$ev['laps'] ?> giri)</span><?php endif; ?></td>
+                <td data-label="ICAO">
                     <?php if (!empty($ev['is_mil'])): ?><span class="mil-badge" title="Flag militare">⚑</span> <?php endif; ?>
                     <a href="https://www.flightdb.net/aircraft.php?modes=<?= urlencode($hex) ?>" target="_blank" title="Apri FlightDB per ICAO <?= htmlspecialchars($hex) ?>">
                         <?= htmlspecialchars($hex) ?>
@@ -338,7 +339,7 @@ function page_url($page) {
                     <?php endif; ?>
                     <button class="copy-btn" onclick="copyText(this.dataset.copy)" data-copy="<?= htmlspecialchars($hex) ?>" title="Copia ICAO">📋</button>
                 </td>
-                <td>
+                <td data-label="Callsign">
                     <?php if (!empty($callsign)): ?>
                         <a href="<?= htmlspecialchars($planespotters_url) ?>" target="_blank" title="Cerca <?= htmlspecialchars($callsign) ?> su Planespotters">
                             <?= htmlspecialchars($callsign) ?>
@@ -348,13 +349,13 @@ function page_url($page) {
                         <?= htmlspecialchars($callsign) ?>
                     <?php endif; ?>
                 </td>
-                <td><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
-                <td><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
-                <td><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
-                <td><?php if ($conf !== null && $conf !== ''): ?><span class="conf conf-<?= $conf >= 0.7 ? 'hi' : ($conf >= 0.4 ? 'mid' : 'lo') ?>"><?= number_format((float)$conf, 2) ?></span><?php endif; ?></td>
-                <td><?= htmlspecialchars($ev['note']) ?></td>
+                <td data-label="Reg"><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
+                <td data-label="Modello"><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
+                <td data-label="Squawk"><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
+                <td data-label="Conf"><?php if ($conf !== null && $conf !== ''): ?><span class="conf conf-<?= $conf >= 0.7 ? 'hi' : ($conf >= 0.4 ? 'mid' : 'lo') ?>"><?= number_format((float)$conf, 2) ?></span><?php endif; ?></td>
+                <td data-label="Note"><?= htmlspecialchars($ev['note']) ?></td>
                 <?php $is_fav = isset($fav_set[(int) $ev['id']]); ?>
-                <td class="actions">
+                <td class="actions" data-label="">
                     <button type="button" class="fav-btn<?= $is_fav ? ' is-fav' : '' ?>"
                             data-id="<?= (int) $ev['id'] ?>"
                             aria-pressed="<?= $is_fav ? 'true' : 'false' ?>"

@@ -44,6 +44,10 @@
   (per tipo/sottotipo, top aeromobili/callsign/modelli/registrazioni, squawk,
   militare vs civile, episodi più lunghi, più giri, distribuzione della
   confidenza, attività per ora e per giorno, ultimi squawk d'emergenza).
+- **Design responsive** (solo entro `@media`, la vista desktop resta identica):
+  `index.php` ora ha il `<meta viewport>`; su smartphone la barra filtri si
+  impila a tutta larghezza e le tabelle-dati (`table.cards`) diventano schede
+  con etichetta/valore; su tablet le tabelle larghe scorrono in orizzontale.
 - Schema `events` esteso: `last_seen_utc`, `is_mil`, `subtype`, `confidence`,
   `laps`, `duration_s`, `updates` + relativi indici.
 - `schema.sql`, `deploy/*.sample`, `.htaccess.example`, `monitor/priors.example.json`.

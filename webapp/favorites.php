@@ -89,7 +89,8 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
         <span style="margin-left:auto;color:#6c757d;font-size:0.9em;"><?= count($rows) ?> risultati</span>
     </form>
 
-    <table>
+    <div class="table-scroll">
+    <table class="cards">
         <thead>
             <tr>
                 <th></th>
@@ -106,26 +107,26 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
         <tbody>
         <?php foreach ($rows as $r): ?>
             <tr>
-                <td>
+                <td data-label="">
                     <button type="button" class="fav-btn is-fav" data-id="<?= (int) $r['event_id'] ?>"
                             title="Rimuovi dai preferiti" aria-pressed="true">⭐</button>
                 </td>
-                <td><?= htmlspecialchars(fav_format_it($r['first_seen_utc'])) ?></td>
-                <td><?= htmlspecialchars($r['event_type']) ?></td>
-                <td>
+                <td data-label="Data"><?= htmlspecialchars(fav_format_it($r['first_seen_utc'])) ?></td>
+                <td data-label="Tipo"><?= htmlspecialchars($r['event_type']) ?></td>
+                <td data-label="ICAO">
                     <a href="index.php?hex=<?= urlencode($r['hex']) ?>" title="Filtra gli eventi per questo ICAO"><?= htmlspecialchars($r['hex']) ?></a>
                     <a href="https://www.flightdb.net/aircraft.php?modes=<?= urlencode($r['hex']) ?>" target="_blank" class="icon-link" title="FlightDB">🔗</a>
                 </td>
-                <td><?= htmlspecialchars($r['callsign']) ?></td>
-                <td><?= htmlspecialchars($r['ev_note']) ?></td>
-                <td>
+                <td data-label="Callsign"><?= htmlspecialchars($r['callsign']) ?></td>
+                <td data-label="Note evento"><?= htmlspecialchars($r['ev_note']) ?></td>
+                <td data-label="Nota preferito">
                     <?php if ((string) $r['fav_note'] !== ''): ?>
                         <span class="fav-note"><?= nl2br(htmlspecialchars($r['fav_note'])) ?></span>
                     <?php endif; ?>
                     <a href="edit_favorite.php?id=<?= (int) $r['event_id'] ?>" class="icon-link" title="Modifica nota">✏️</a>
                 </td>
-                <td><?= htmlspecialchars(fav_format_it($r['created_at'] . ' UTC')) ?></td>
-                <td>
+                <td data-label="Aggiunto il"><?= htmlspecialchars(fav_format_it($r['created_at'] . ' UTC')) ?></td>
+                <td data-label="">
                     <a href="view.php?id=<?= (int) $r['event_id'] ?>" class="icon-link" title="Apri mappa traccia">🗺️</a>
                 </td>
             </tr>
@@ -137,6 +138,7 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
         <?php endif; ?>
         </tbody>
     </table>
+    </div>
 </div>
 
 <script>

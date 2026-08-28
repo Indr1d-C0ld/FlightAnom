@@ -43,3 +43,78 @@ a { color: #007BFF; text-decoration: none; }
 .kpi .n { font-size: 1.6rem; font-weight: bold; }
 .kpi .l { color: #6c757d; font-size: 0.85rem; }
 .bar { background: #007BFF; height: 10px; border-radius: 3px; display: inline-block; vertical-align: middle; }
+
+/* =====================================================================
+   RESPONSIVE — solo entro @media: la vista desktop resta identica.
+   ===================================================================== */
+
+/* Tablet e desktop stretti: le tabelle larghe scorrono invece di comprimersi. */
+@media (max-width: 992px) {
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll > table { min-width: 760px; }
+}
+
+/* Smartphone: margini ridotti, filtri impilati, tabelle-dati come schede. */
+@media (max-width: 560px) {
+    body { margin: 6px; }
+    .container { padding: 12px; border-radius: 0; }
+    h1 { font-size: 1.3rem; }
+    .nav-links a { display: inline-block; margin: 0 12px 6px 0; }
+
+    /* Barra filtri: un campo per riga, a tutta larghezza */
+    .container .filters,
+    .container .filter-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+    .container .filters > *,
+    .container .filters input,
+    .container .filters select,
+    .container .filter-bar > * { width: 100%; margin: 0; box-sizing: border-box; }
+    .container .filters label,
+    .container .filter-bar label { display: flex; align-items: center; gap: 8px; }
+    .container .filters label input[type="checkbox"],
+    .container .filters label select { width: auto; }
+    .quick-range { display: flex; flex-wrap: wrap; }
+    .quick-range .quick-btn { flex: 1 1 45%; }
+
+    /* Tabelle marcate .cards: intestazione nascosta, ogni riga = scheda */
+    .table-scroll { overflow: visible; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; }
+    table.cards { min-width: 0; width: 100%; }
+    table.cards thead { display: none; }
+    table.cards tr {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        background: #fff;
+    }
+    table.cards tr:hover { background: #fff; }
+    table.cards td {
+        border: none;
+        border-bottom: 1px solid #f0f0f0;
+        padding: 7px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        text-align: right;
+        word-break: break-word;
+    }
+    table.cards td:last-child { border-bottom: none; }
+    table.cards td::before {
+        content: attr(data-label);
+        font-weight: bold;
+        color: #555;
+        text-align: left;
+        flex: 0 0 38%;
+    }
+    table.cards td[data-label=""] { justify-content: flex-start; text-align: left; }
+    table.cards td[data-label=""]::before { content: none; }
+    table.cards td.actions { padding-top: 10px; }
+
+    /* Statistiche */
+    .stats-grid { grid-template-columns: 1fr; }
+    .stats-card { overflow-x: auto; }
+    .kpi-row { gap: 10px; }
+    .kpi { flex: 1 1 44%; min-width: 0; padding: 10px 12px; }
+    .kpi .n { font-size: 1.35rem; }
+}
