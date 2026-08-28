@@ -20,28 +20,17 @@ Environment="PYTHONUNBUFFERED=1"
 ExecStart=/opt/flight_anom/monitor/venv/bin/python3 /opt/flight_anom/monitor/flight_anom.py \
     --polygons-file /opt/flight_anom/monitor/polygons.json \
     --interval 60 \
-    --max-alt-ft 55000 \
-    --max-gs-kt 600 \
-    --max-vs-fpm 6000 \
-    --max-dgs-kts 200 \
+    --min-confidence 0.25 \
+    --segment-gap-s 600 \
+    --episode-gap-s 1200 \
+    --prune-idle-s 1800 \
+    --track-maxlen 300 \
     --proximity-km 2.5 \
     --prox_angle_deg 15.0 \
     --prox_alt_diff_ft 400.0 \
     --prox_gs_diff_kt 35.0 \
-    --anomaly-cooldown 600 \
-    --pattern-cooldown 900 \
-    --prox-cooldown 600 \
-    --loop-min-points 30 \
-    --loop-close-km 3.0 \
-    --loop-min-span-km 12.0 \
-    --loop-min-laps 4 \
-    --lawn-min-points 14 \
-    --lawn-heading-tol 15.0 \
-    --lawn-required-passes 6 \
-    --lawn-min-span-km 18.0 \
-    --mesh-min-points 50 \
-    --mesh-perp-tol 10.0 \
-    --mesh-min-crossings 8
+    --prox-streak 2 \
+    --prox-cooldown 600
 Restart=always
 RestartSec=30
 StandardOutput=journal

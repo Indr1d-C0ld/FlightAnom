@@ -1,0 +1,15 @@
+{
+  "_commento": "Copiare in monitor/priors.json per sovrascrivere i priori militari/ISR incorporati in flight_anom.py. Tutte le chiavi sono opzionali.",
+
+  "mil_hex_prefixes": ["ae", "adf"],
+
+  "mil_callsign_regex": "^(RRR|RCH|CNV|CTM|FAF|GAF|IAM|AME|NATO|FORTE|HOMER|REDEYE|COBRA|JEDI|SLAM|SNIPER|MMF|MAGMA|YETI|DUKE|REEF|BART|POLIZIA|GDF|FIAMME|SOCCORSO|GUARDIA|CARAB)\\b",
+
+  "isr_types": [
+    "E3TF", "E3CF", "E3", "E6", "E8", "E11", "P8", "P3", "EP3",
+    "B350", "B300", "C12", "RC12", "MC12", "SW4",
+    "GLF5", "GL5T", "GLEX", "G550", "CL60",
+    "RQ4", "MQ4", "MQ9", "MQ1", "RQ7", "U2", "WC135", "OC135", "KC135",
+    "C208", "P68", "DA42", "DA62", "VUT"
+  ]
+}

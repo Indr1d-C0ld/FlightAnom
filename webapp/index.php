@@ -58,13 +58,22 @@ if (!empty($_GET['event_type'])) {
     $where[] = "event_type = ?";
     $params[] = $_GET['event_type'];
 }
-if (!empty($_GET['hex'])) {
-    $where[] = "hex LIKE ?";
-    $params[] = '%' . $_GET['hex'] . '%';
+foreach (['hex' => 'hex', 'callsign' => 'callsign', 'reg' => 'reg',
+          'squawk' => 'squawk', 'model' => 'model_t'] as $qs => $col) {
+    if (!empty($_GET[$qs])) {
+        $where[] = "$col LIKE ?";
+        $params[] = '%' . $_GET[$qs] . '%';
+    }
 }
-if (!empty($_GET['callsign'])) {
-    $where[] = "callsign LIKE ?";
-    $params[] = '%' . $_GET['callsign'] . '%';
+$min_conf = isset($_GET['min_conf']) && is_numeric($_GET['min_conf'])
+    ? max(0.0, min(1.0, (float) $_GET['min_conf'])) : 0.0;
+if ($min_conf > 0) {
+    $where[] = "confidence >= ?";
+    $params[] = $min_conf;
+}
+$only_mil = !empty($_GET['mil']);
+if ($only_mil) {
+    $where[] = "is_mil = 1";
 }
 
 $only_fav = !empty($_GET['fav']);
@@ -90,9 +99,14 @@ $dir = $_GET['dir'] ?? 'desc';
 $sort_whitelist = [
     'date' => 'first_seen_utc',
     'type' => 'event_type',
+    'subtype' => 'subtype',
     'icao' => 'hex',
     'callsign' => 'callsign',
-    'note' => 'note'
+    'reg' => 'reg',
+    'model' => 'model_t',
+    'squawk' => 'squawk',
+    'conf' => 'confidence',
+    'note' => 'note',
 ];
 if (!isset($sort_whitelist[$sort])) $sort = 'date';
 $order_by = $sort_whitelist[$sort];
@@ -140,7 +154,9 @@ try {
     $offset = ($page - 1) * $per_page;
 
     // Query principale con LIMIT/OFFSET
-    $sql = "SELECT id, first_seen_utc, hex, callsign, event_type, note FROM events";
+    $sql = "SELECT id, first_seen_utc, last_seen_utc, hex, callsign, reg, model_t, squawk,
+                   event_type, subtype, note, confidence, is_mil, laps, duration_s
+            FROM events";
     if ($where) {
         $sql .= " WHERE " . implode(" AND ", $where);
     }
@@ -242,7 +258,7 @@ function page_url($page) {
 <body>
 <div class="container">
     <h1>✈️ Flight Anomaly Monitor</h1>
-    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a></p>
+    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a></p>
     <form method="GET" class="filters" id="filterForm">
         <select name="event_type">
             <option value="">Tutti i tipi</option>
@@ -253,11 +269,20 @@ function page_url($page) {
 
         <input type="text" name="hex" placeholder="ICAO hex" value="<?= htmlspecialchars($_GET['hex']??'') ?>">
         <input type="text" name="callsign" placeholder="Callsign" value="<?= htmlspecialchars($_GET['callsign']??'') ?>">
+        <input type="text" name="reg" placeholder="Registrazione" value="<?= htmlspecialchars($_GET['reg']??'') ?>">
+        <input type="text" name="model" placeholder="Modello" value="<?= htmlspecialchars($_GET['model']??'') ?>">
+        <input type="text" name="squawk" placeholder="Squawk" value="<?= htmlspecialchars($_GET['squawk']??'') ?>">
         <input type="date" name="date_from" value="<?= htmlspecialchars($date_from) ?>">
         <input type="date" name="date_to" value="<?= htmlspecialchars($date_to) ?>">
-        <label title="Mostra solo eventi di aeromobili tra i preferiti">
-            <input type="checkbox" name="fav" value="1" <?= $only_fav ? 'checked' : '' ?>> Solo preferiti
+        <label title="Confidenza minima">conf ≥
+            <select name="min_conf">
+                <?php foreach (['0'=>'—','0.25'=>'0.25','0.4'=>'0.40','0.6'=>'0.60','0.8'=>'0.80'] as $v=>$lbl): ?>
+                    <option value="<?= $v ?>" <?= (string)($_GET['min_conf']??'0')===$v?'selected':'' ?>><?= $lbl ?></option>
+                <?php endforeach; ?>
+            </select>
         </label>
+        <label title="Solo aeromobili con flag militare"><input type="checkbox" name="mil" value="1" <?= $only_mil ? 'checked' : '' ?>> Solo mil</label>
+        <label title="Mostra solo eventi tra i preferiti"><input type="checkbox" name="fav" value="1" <?= $only_fav ? 'checked' : '' ?>> Solo preferiti</label>
         <button type="submit">Filtra</button>
         <!-- Campi nascosti per mantenere l'ordinamento -->
         <input type="hidden" name="sort" value="<?= htmlspecialchars($sort) ?>">
@@ -274,6 +299,7 @@ function page_url($page) {
         </div>
     </form>
 
+    <div class="table-scroll">
     <table>
         <thead>
             <tr>
@@ -281,8 +307,12 @@ function page_url($page) {
                 <th><a href="<?= htmlspecialchars(sort_url('type', $sort, $dir)) ?>">Tipo <?= $sort=='type' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('icao', $sort, $dir)) ?>">ICAO <?= $sort=='icao' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('callsign', $sort, $dir)) ?>">Callsign <?= $sort=='callsign' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('reg', $sort, $dir)) ?>">Reg <?= $sort=='reg' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('model', $sort, $dir)) ?>">Modello <?= $sort=='model' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('squawk', $sort, $dir)) ?>">Squawk <?= $sort=='squawk' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
+                <th><a href="<?= htmlspecialchars(sort_url('conf', $sort, $dir)) ?>">Conf <?= $sort=='conf' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
                 <th><a href="<?= htmlspecialchars(sort_url('note', $sort, $dir)) ?>">Note <?= $sort=='note' ? ($dir=='ASC' ? '▲' : '▼') : '' ?></a></th>
-                <th>Mappa</th>
+                <th>Azioni</th>
             </tr>
         </thead>
         <tbody>
@@ -292,11 +322,14 @@ function page_url($page) {
                 $callsign = $ev['callsign'];
                 $flightradar24_url = !empty($callsign) ? 'https://www.flightradar24.com/' . urlencode($callsign) : '';
                 $planespotters_url = !empty($callsign) ? 'https://www.planespotters.net/search?q=' . urlencode($callsign) : '';
+                $conf = $ev['confidence'];
+                $tipo = $ev['event_type'] . (!empty($ev['subtype']) ? ' · ' . $ev['subtype'] : '');
             ?>
             <tr>
                 <td><?= htmlspecialchars(format_italian_datetime($ev['first_seen_utc'])) ?></td>
-                <td><?= htmlspecialchars($ev['event_type']) ?></td>
+                <td><?= htmlspecialchars($tipo) ?><?php if (!empty($ev['laps'])): ?> <span class="muted">(<?= (int)$ev['laps'] ?> giri)</span><?php endif; ?></td>
                 <td>
+                    <?php if (!empty($ev['is_mil'])): ?><span class="mil-badge" title="Flag militare">⚑</span> <?php endif; ?>
                     <a href="https://www.flightdb.net/aircraft.php?modes=<?= urlencode($hex) ?>" target="_blank" title="Apri FlightDB per ICAO <?= htmlspecialchars($hex) ?>">
                         <?= htmlspecialchars($hex) ?>
                     </a>
@@ -315,6 +348,10 @@ function page_url($page) {
                         <?= htmlspecialchars($callsign) ?>
                     <?php endif; ?>
                 </td>
+                <td><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
+                <td><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
+                <td><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
+                <td><?php if ($conf !== null && $conf !== ''): ?><span class="conf conf-<?= $conf >= 0.7 ? 'hi' : ($conf >= 0.4 ? 'mid' : 'lo') ?>"><?= number_format((float)$conf, 2) ?></span><?php endif; ?></td>
                 <td><?= htmlspecialchars($ev['note']) ?></td>
                 <?php $is_fav = isset($fav_set[(int) $ev['id']]); ?>
                 <td class="actions">
@@ -333,6 +370,7 @@ function page_url($page) {
             <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
 
     <?php if ($total_pages > 1): ?>
     <div class="pagination">

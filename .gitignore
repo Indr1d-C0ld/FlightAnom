@@ -12,6 +12,9 @@ config.php
 # Poligono di copertura reale (usare polygons.example.json come base)
 monitor/polygons.json
 
+# Override locale dei priori (usare priors.example.json come base)
+monitor/priors.json
+
 # Python
 __pycache__/
 *.pyc

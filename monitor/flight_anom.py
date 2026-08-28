@@ -1,23 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Monitor ADS-B per poligono personalizzato – versione per portale web.
-Salva eventi in SQLite con traccia per mappa interattiva.
-Rilevamento robusto con filtro aeroporti per ridurre falsi positivi.
-Rimosso rilevamento di velocità bassa e quota bassa.
-Corretto timestamp UTC.
+Monitor ADS-B per poligono personalizzato - versione per portale web.
+
+Rileva su TUTTO il traffico dentro il poligono (non solo militare):
+  - PATTERN  orbite/racetrack, tagliaerba (survey), reticolato (grid)
+  - PROX     prossimita'/formazione (cluster, inseguimento/trail)
+  - ANOMALY  squawk di emergenza, quota sostenuta fuori scala
+
+Ogni rilevamento porta una confidenza [0..1] = geometria + cinematica
+(banda velocita', stabilita' di quota, tempo sulla stazione) + priori
+(flag militare dbFlags, blocco hex, callsign, tipo velivolo ISR). I priori
+NON filtrano: alzano solo la confidenza. Sotto --min-confidence l'evento
+non viene registrato.
+
+Modello a EPISODIO: un pattern continuo = una riga aggiornata in-place
+(first/last_seen, durata, giri, confidenza) finche' non cessa.
+
+Tracce tempo-consapevoli: ogni punto ha timestamp; un buco > --segment-gap-s
+apre un nuovo segmento (niente falsi loop da sortite diverse fuse).
 """
 
 import argparse
-import sqlite3
-import json
-import time
-import math
 import fcntl
+import json
+import math
 import os
+import re
+import sqlite3
 import sys
+import time
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -42,18 +56,50 @@ HTTP_TIMEOUT = 15
 HTTP_RETRIES = 2
 HTTP_BACKOFF = 2.0
 
-# Soglie default (rimosse min_gs e min_alt)
-DEF_MAX_ALT_FT = 60000
-DEF_MIN_GS_KT = 0    # non più usato, tenuto per retrocompatibilità parametri
-DEF_MAX_GS_KT = 650
-DEF_MAX_VS_FPM = 8000
-DEF_MAX_DGS_KTS = 250
-
-# Percorso del DB: variabile d'ambiente FLIGHT_ANOM_DB, altrimenti ../db/events.db
-# rispetto a questo file (funziona sia nel deployment live sia nel repo).
 DB_FILE = os.environ.get("FLIGHT_ANOM_DB") or os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "db", "events.db")
 )
+
+# ---------------------------
+# Priori (militare / ISR). Sovrascrivibili con monitor/priors.json:
+#   { "mil_hex_prefixes": [...], "mil_callsign_regex": "...", "isr_types": [...] }
+# ---------------------------
+MIL_HEX_PREFIXES = ("ae", "adf")  # blocco USAF (AE____, ADF___): affidabile
+
+MIL_CS_RE = re.compile(
+    r"^(RRR|RCH|CNV|CTM|FAF|GAF|IAM|AME|NATO|FORTE|HOMER|REDEYE|COBRA|JEDI|SLAM|"
+    r"SNIPER|MMF|MAGMA|YETI|DUKE|REEF|BART|GRZLY|PYTHON|VIKING|POLIZIA|GDF|"
+    r"FIAMME|SOCCORSO|GUARDIA|CARAB)\b",
+    re.I,
+)
+
+ISR_TYPES = {
+    "E3TF", "E3CF", "E3", "E6", "E8", "E11", "P8", "P3", "EP3", "P3C",
+    "B350", "B300", "C12", "RC12", "MC12", "B190", "SW4",
+    "GLF5", "GL5T", "GLEX", "G550", "CL60", "C560", "C56X", "BE20",
+    "RQ4", "MQ4", "MQ9", "MQ1", "MQ1C", "RQ7", "U2", "WC135", "OC135", "KC135",
+    "AT8T", "C208", "P68", "DA42", "DA62", "VUT", "AC90", "C82R",
+}
+
+
+def load_priors_override(script_dir: str) -> None:
+    global MIL_HEX_PREFIXES, MIL_CS_RE, ISR_TYPES
+    path = os.path.join(script_dir, "priors.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d.get("mil_hex_prefixes"), list):
+            MIL_HEX_PREFIXES = tuple(str(p).lower() for p in d["mil_hex_prefixes"])
+        if isinstance(d.get("mil_callsign_regex"), str):
+            MIL_CS_RE = re.compile(d["mil_callsign_regex"], re.I)
+        if isinstance(d.get("isr_types"), list):
+            ISR_TYPES = {str(t).upper() for t in d["isr_types"]}
+        print(f"[INFO] priors.json caricato ({path})")
+    except Exception as e:
+        print(f"[WARN] priors.json non valido: {e}", file=sys.stderr)
+
 
 # ---------------------------
 # Dataclass
@@ -71,9 +117,22 @@ class Aircraft:
     squawk: Optional[str] = None
     ground: Optional[bool] = None
     model_t: Optional[str] = None
+    dbflags: int = 0
+    is_mil: bool = False
+
+
+@dataclass
+class TP:
+    """Punto di traccia con timestamp (epoch wall-clock del campionamento)."""
+    lat: float
+    lon: float
+    alt: Optional[int]
+    gs: Optional[float]
+    t: float
+
 
 # ---------------------------
-# Geo utility
+# Utility numeriche / geo
 # ---------------------------
 def safe_float(val):
     try:
@@ -81,11 +140,13 @@ def safe_float(val):
     except (TypeError, ValueError):
         return None
 
+
 def safe_int(val):
     try:
         return int(val)
     except (TypeError, ValueError):
         return None
+
 
 def safe_bool(val) -> Optional[bool]:
     if isinstance(val, bool):
@@ -97,27 +158,93 @@ def safe_bool(val) -> Optional[bool]:
         return False
     return None
 
+
 def haversine_km(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
     R = 6371.0
     lat1, lon1 = map(math.radians, p1)
     lat2, lon2 = map(math.radians, p2)
     dlat = lat2 - lat1
     dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-def heading(p1: Tuple[float, float], p2: Tuple[float, float]) -> Optional[float]:
-    dy = p2[0] - p1[0]
-    dx = p2[1] - p1[1]
-    if dx == 0 and dy == 0:
-        return None
-    return math.degrees(math.atan2(dx, dy)) % 360
 
 def angle_diff_deg(a: float, b: float) -> float:
     d = abs(a - b) % 360.0
     return d if d <= 180.0 else 360.0 - d
 
-def point_in_ring(point: Tuple[float, float], ring: List[Tuple[float, float]]) -> bool:
+
+def ad180(a: float, b: float) -> float:
+    """Differenza angolare fra prue considerate mod 180 (rotta e reciproca uguali)."""
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
+
+def to_local_xy(pts: List[Tuple[float, float]], ref: Tuple[float, float]) -> List[Tuple[float, float]]:
+    """Proiezione equirettangolare in km attorno a ref: x = est, y = nord."""
+    lat0, lon0 = ref
+    k = math.cos(math.radians(lat0))
+    return [((lon - lon0) * 111.320 * k, (lat - lat0) * 110.574) for (lat, lon) in pts]
+
+
+def path_len_km(xy: List[Tuple[float, float]]) -> float:
+    return sum(math.hypot(xy[i + 1][0] - xy[i][0], xy[i + 1][1] - xy[i][1])
+              for i in range(len(xy) - 1))
+
+
+def pca_axes(xy: List[Tuple[float, float]]) -> Tuple[float, float, float, Tuple[float, float]]:
+    """Ritorna (major, minor, orient_deg, centro) da PCA della nuvola di punti (km).
+    major/minor ~ 2*sigma lungo gli assi principali (dimensione caratteristica)."""
+    n = len(xy)
+    mx = sum(p[0] for p in xy) / n
+    my = sum(p[1] for p in xy) / n
+    sxx = sum((p[0] - mx) ** 2 for p in xy) / n
+    syy = sum((p[1] - my) ** 2 for p in xy) / n
+    sxy = sum((p[0] - mx) * (p[1] - my) for p in xy) / n
+    tr = sxx + syy
+    det = sxx * syy - sxy * sxy
+    disc = max(0.0, tr * tr / 4.0 - det)
+    l1 = tr / 2.0 + math.sqrt(disc)
+    l2 = tr / 2.0 - math.sqrt(disc)
+    major = 2.0 * math.sqrt(max(l1, 0.0))
+    minor = 2.0 * math.sqrt(max(l2, 0.0))
+    ang = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    return major, minor, math.degrees(ang), (mx, my)
+
+
+def turning_total_deg(xy: List[Tuple[float, float]]) -> float:
+    """Somma dei valori assoluti dei cambi di prua lungo il percorso.
+    Per n giri di un circuito chiuso ~ n*360."""
+    total = 0.0
+    prev_h = None
+    for i in range(len(xy) - 1):
+        dx = xy[i + 1][0] - xy[i][0]
+        dy = xy[i + 1][1] - xy[i][1]
+        if dx == 0 and dy == 0:
+            continue
+        h = math.degrees(math.atan2(dx, dy))
+        if prev_h is not None:
+            d = (h - prev_h + 180.0) % 360.0 - 180.0
+            total += abs(d)
+        prev_h = h
+    return total
+
+
+def leg_headings_mod180(xy: List[Tuple[float, float]]) -> List[float]:
+    out = []
+    for i in range(len(xy) - 1):
+        dx = xy[i + 1][0] - xy[i][0]
+        dy = xy[i + 1][1] - xy[i][1]
+        if abs(dx) + abs(dy) < 1e-6:
+            continue
+        out.append(math.degrees(math.atan2(dx, dy)) % 180.0)
+    return out
+
+
+# ---------------------------
+# Poligono
+# ---------------------------
+def point_in_ring(point, ring) -> bool:
     x, y = point[1], point[0]
     inside = False
     n = len(ring)
@@ -128,7 +255,8 @@ def point_in_ring(point: Tuple[float, float], ring: List[Tuple[float, float]]) -
             inside = not inside
     return inside
 
-def point_in_polygon(point: Tuple[float, float], polygon: List[List[Tuple[float, float]]]) -> bool:
+
+def point_in_polygon(point, polygon) -> bool:
     if not polygon:
         return False
     if not point_in_ring(point, polygon[0]):
@@ -138,14 +266,15 @@ def point_in_polygon(point: Tuple[float, float], polygon: List[List[Tuple[float,
             return False
     return True
 
-def in_any_polygon(lat: Optional[float], lon: Optional[float],
-                   polygons: List[List[List[Tuple[float, float]]]]) -> bool:
+
+def in_any_polygon(lat, lon, polygons) -> bool:
     if lat is None or lon is None:
         return False
     pt = (lat, lon)
     return any(point_in_polygon(pt, poly) for poly in polygons)
 
-def load_polygons_from_geojson(path: str) -> List[List[List[Tuple[float, float]]]]:
+
+def load_polygons_from_geojson(path: str):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     polys = []
@@ -164,8 +293,9 @@ def load_polygons_from_geojson(path: str) -> List[List[List[Tuple[float, float]]
             polys.append([[(float(pt[0]), float(pt[1])) for pt in ring] for ring in poly])
     return polys
 
+
 # ---------------------------
-# Rate limiting (lockfile)
+# Rate limiting + fetch
 # ---------------------------
 def api_rate_guard():
     lockfile = "/tmp/adsbfi_api.lock"
@@ -176,8 +306,7 @@ def api_rate_guard():
             last = float(f.read().strip())
         except Exception:
             last = 0.0
-        now = time.time()
-        delta = now - last
+        delta = time.time() - last
         if delta < 1.05:
             time.sleep(1.05 - delta)
         f.seek(0)
@@ -186,9 +315,9 @@ def api_rate_guard():
         f.flush()
         fcntl.flock(f, fcntl.LOCK_UN)
 
+
 def fetch_tile(lat: float, lon: float, rng_nm: int) -> Optional[List[dict]]:
-    """Ritorna la lista aeromobili della tile, [] se la tile e' genuinamente
-    vuota, None se il fetch e' fallito dopo i retry (tile non recuperata)."""
+    """Lista aeromobili della tile; [] se vuota, None se il fetch e' fallito."""
     api_rate_guard()
     url = API_TEMPLATE.format(lat=lat, lon=lon, rng=rng_nm)
     last_exc = None
@@ -201,200 +330,306 @@ def fetch_tile(lat: float, lon: float, rng_nm: int) -> Optional[List[dict]]:
             last_exc = e
             if attempt < HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF * (attempt + 1))
-    print(f"[WARN] Fetch fallito {url} — {last_exc}", file=sys.stderr)
+    print(f"[WARN] Fetch fallito {url} - {last_exc}", file=sys.stderr)
     return None
+
 
 # ---------------------------
 # Aeroporti
 # ---------------------------
 def load_airports(json_path: str) -> List[dict]:
-    with open(json_path, 'r', encoding='utf-8') as f:
+    with open(json_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def nearest_airport(lat: float, lon: float, airports: List[dict]) -> Tuple[Optional[dict], float]:
-    min_dist = float('inf')
+
+def nearest_airport(lat, lon, airports):
+    min_dist = float("inf")
     nearest = None
     for apt in airports:
-        d = haversine_km((lat, lon), (apt['lat'], apt['lon']))
+        d = haversine_km((lat, lon), (apt["lat"], apt["lon"]))
         if d < min_dist:
             min_dist = d
             nearest = apt
     return nearest, min_dist
 
-# ---------------------------
-# Pattern detection
-# ---------------------------
-def detect_loop_or_racetrack(track: List[Tuple[float, float]],
-                             loop_close_km: float = 3.0,
-                             min_points: int = 30,
-                             min_span_km: float = 10.0,
-                             min_laps: int = 2) -> Optional[str]:
-    if len(track) < min_points:
-        return None
-    dist_start_end = haversine_km(track[0], track[-1])
-    if dist_start_end > loop_close_km:
-        return None
-    lats = [p[0] for p in track]
-    lons = [p[1] for p in track]
-    span_lat = haversine_km((min(lats), min(lons)), (max(lats), min(lons)))
-    span_lon = haversine_km((min(lats), min(lons)), (min(lats), max(lons)))
-    major = max(span_lat, span_lon)
-    minor = min(span_lat, span_lon)
-    if major < min_span_km or minor < 2:
-        return None
-    aspect_ratio = major / (minor + 1e-6)
-    shape = "LOOP/CERCHIO" if aspect_ratio < 1.5 else "RACETRACK"
-    crossings = 0
-    mid_lat = (max(lats) + min(lats)) / 2
-    for i in range(len(track) - 1):
-        if (track[i][0] - mid_lat) * (track[i+1][0] - mid_lat) < 0:
-            crossings += 1
-    if crossings < min_laps * 2:
-        return None
-    return shape
 
-def detect_lawnmower(track: List[Tuple[float, float]],
-                     min_points: int = 14,
-                     heading_tolerance: float = 15.0,
-                     required_passes: int = 4,
-                     min_span_km: float = 15.0) -> bool:
-    if len(track) < min_points:
-        return False
-    lats = [p[0] for p in track]
-    lons = [p[1] for p in track]
-    span = haversine_km((min(lats), min(lons)), (max(lats), max(lons)))
-    if span < min_span_km:
-        return False
-    heads = []
-    for i in range(len(track) - 1):
-        h = heading(track[i], track[i+1])
-        if h is None:
-            continue
-        heads.append(h % 180)
-    if not heads:
-        return False
-    clusters = [[], []]
-    base = min(heads, key=lambda x: sum(angle_diff_deg(x, y) for y in heads))
+# ---------------------------
+# Priori
+# ---------------------------
+def prior_score(ac: Aircraft) -> Tuple[bool, float, List[str]]:
+    prior = 0.0
+    tags: List[str] = []
+    is_mil = False
+    df = ac.dbflags or 0
+    if df & 1:
+        is_mil = True
+        prior += 0.35
+        tags.append("mil(dbFlags)")
+    if df & 2:
+        prior += 0.10
+        tags.append("notevole(dbFlags)")
+    hx = (ac.hex or "").lower()
+    if hx.startswith(MIL_HEX_PREFIXES):
+        is_mil = True
+        prior += 0.20
+        tags.append("hex-mil")
+    cs = (ac.flight or "").upper()
+    if cs and MIL_CS_RE.match(cs):
+        prior += 0.25
+        tags.append("callsign-mil")
+    mt = (ac.model_t or "").upper()
+    if mt and mt in ISR_TYPES:
+        prior += 0.30
+        tags.append(f"tipo-ISR({mt})")
+    return is_mil, min(prior, 0.75), tags
+
+
+# ---------------------------
+# Cinematica del segmento
+# ---------------------------
+def kinematics_score(seg: List[TP]) -> Tuple[float, List[str], Optional[float], Optional[float], float]:
+    gss = [p.gs for p in seg if p.gs is not None]
+    alts = [p.alt for p in seg if p.alt is not None]
+    dur_s = seg[-1].t - seg[0].t if len(seg) >= 2 else 0.0
+    kin = 0.0
+    tags: List[str] = []
+    mean_gs = sum(gss) / len(gss) if gss else None
+    if mean_gs is not None:
+        if 120 <= mean_gs <= 320:
+            kin += 0.20
+            tags.append("gs-orbita")
+        elif 90 <= mean_gs < 120:
+            kin += 0.10
+            tags.append("gs-lento")
+    alt_std = None
+    if len(alts) >= 3:
+        m = sum(alts) / len(alts)
+        alt_std = (sum((a - m) ** 2 for a in alts) / len(alts)) ** 0.5
+        if alt_std < 400:
+            kin += 0.18
+            tags.append("quota-bloccata")
+        if m > 40000:
+            kin += 0.15
+            tags.append("quota-alta")
+    if dur_s > 90 * 60:
+        kin += 0.25
+        tags.append("on-station>90m")
+    elif dur_s > 45 * 60:
+        kin += 0.15
+        tags.append("on-station>45m")
+    return kin, tags, mean_gs, alt_std, dur_s
+
+
+# ---------------------------
+# Classificatori di pattern (operano su un SEGMENTO di TP)
+# ---------------------------
+def _xy_of(seg: List[TP]) -> Tuple[List[Tuple[float, float]], Tuple[float, float]]:
+    pts = [(p.lat, p.lon) for p in seg]
+    ref = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    return to_local_xy(pts, ref), ref
+
+
+def classify_orbit(seg: List[TP], min_points=12, min_minutes=8.0, min_laps_turn=1.6):
+    """Orbite chiuse ripetute: racetrack tipici ISR o cerchi.
+    Ritorna (subtype, laps, geom_conf, extent_km, dur_s) o None."""
+    if len(seg) < min_points:
+        return None
+    dur_s = seg[-1].t - seg[0].t
+    if dur_s < min_minutes * 60:
+        return None
+    xy, _ = _xy_of(seg)
+    major, minor, _, c = pca_axes(xy)
+    if major < 2.0:            # estensione troppo piccola: holding stretto / rumore
+        return None
+    plen = path_len_km(xy)
+    compact = plen / (2.0 * major + 1e-6)   # percorso >> dimensione => sta girando
+    if compact < 1.8:
+        return None
+    laps_turn = turning_total_deg(xy) / 360.0
+    if laps_turn < min_laps_turn:
+        return None
+    maxd = max(math.hypot(p[0] - c[0], p[1] - c[1]) for p in xy)
+    if maxd > 2.2 * major:     # esce troppo dalla regione: non e' contenuto
+        return None
+    ratio = minor / (major + 1e-6)
+    subtype = "ORBITA" if ratio > 0.6 else "RACETRACK"
+    laps = max(1, round(laps_turn))
+    geom = min(1.0, 0.35 + 0.15 * min(laps_turn, 4.0) + 0.10 * min(max(compact - 1.8, 0.0), 2.0))
+    return (subtype, laps, geom, 2.0 * major, dur_s)
+
+
+def classify_lawnmower(seg: List[TP], min_points=16, min_km=6.0, tol=18.0, min_legs=4):
+    """Survey a gambe parallele che spazzano un'area (tagliaerba).
+    Ritorna (subtype, geom_conf, extent_km, dur_s) o None."""
+    if len(seg) < min_points:
+        return None
+    xy, _ = _xy_of(seg)
+    heads = leg_headings_mod180(xy)
+    if len(heads) < min_legs * 2:
+        return None
+    bins = [0] * 36
     for h in heads:
-        if angle_diff_deg(h, base) < heading_tolerance:
-            clusters[0].append(h)
-        elif angle_diff_deg((h+180) % 180, base) < heading_tolerance:
-            clusters[1].append(h)
-    if len(clusters[0]) < required_passes or len(clusters[1]) < required_passes:
-        return False
-    sequence = []
-    for h in heads:
-        if angle_diff_deg(h, base) < heading_tolerance:
-            sequence.append("A")
-        elif angle_diff_deg((h+180) % 180, base) < heading_tolerance:
-            sequence.append("B")
-    alternations = sum(1 for i in range(1, len(sequence)) if sequence[i] != sequence[i-1])
-    return alternations >= (required_passes - 1)
-
-def detect_mesh(track: List[Tuple[float, float]],
-                min_points: int = 40,
-                perpendicular_tolerance: float = 10.0,
-                min_crossings: int = 6,
-                min_family_ratio: float = 0.25) -> bool:
-    if len(track) < min_points:
-        return False
-    heads = [heading(track[i], track[i+1]) for i in range(len(track)-1)]
-    heads = [int(round((h or 0)/10.0)*10) % 180 for h in heads if h is not None]
-    if not heads:
-        return False
-    uniq = sorted(set(heads))
-    pairs = [(a, b) for a in uniq for b in uniq
-             if abs(((a-b)+180)%180 - 90) <= perpendicular_tolerance]
-    if not pairs:
-        return False
-    def family(h, a, b, tol):
-        if abs(((h-a)+180)%180) <= tol:
-            return "A"
-        if abs(((h-b)+180)%180) <= tol:
-            return "B"
+        bins[int(h // 5) % 36] += 1
+    dom = max(range(36), key=lambda b: bins[b]) * 5 + 2.5
+    aligned = [h for h in heads if ad180(h, dom) <= tol]
+    if len(aligned) < 0.55 * len(heads):
         return None
-    a, b = pairs[0]
-    fam_counts = {"A": 0, "B": 0}
-    crossings = 0
-    last = None
+    lr = math.radians(dom)
+    lx, ly = math.sin(lr), math.cos(lr)      # lungo-gamba
+    px, py = math.cos(lr), -math.sin(lr)     # perpendicolare
+    along = [p[0] * lx + p[1] * ly for p in xy]
+    perp = [p[0] * px + p[1] * py for p in xy]
+    along_span = max(along) - min(along)
+    perp_span = max(perp) - min(perp)
+    if along_span < min_km or perp_span < 2.0 or perp_span < 0.12 * along_span:
+        return None
+    legs = 0
+    sign = 0
+    for i in range(1, len(along)):
+        d = along[i] - along[i - 1]
+        s = 1 if d > 0.05 else (-1 if d < -0.05 else 0)
+        if s and s != sign:
+            if sign != 0:
+                legs += 1
+            sign = s
+    if legs < min_legs:
+        return None
+    geom = min(1.0, 0.35 + 0.07 * min(legs, 8) + 0.10 * min(perp_span / max(along_span, 1e-6) * 3.0, 1.0))
+    return ("TAGLIAERBA", geom, max(along_span, perp_span), seg[-1].t - seg[0].t)
+
+
+def classify_grid(seg: List[TP], min_points=30, min_km=6.0, tol=15.0):
+    """Reticolato: due direzioni ~perpendicolari CHE COPRONO un'area 2D
+    (non S ripetute sullo stesso posto). Ritorna (subtype, geom_conf, extent_km, dur_s) o None."""
+    if len(seg) < min_points:
+        return None
+    xy, _ = _xy_of(seg)
+    heads = leg_headings_mod180(xy)
+    if len(heads) < min_points * 0.6:
+        return None
+    bins = [0] * 36
     for h in heads:
-        f = family(h, a, b, perpendicular_tolerance)
-        if f:
-            fam_counts[f] += 1
-            if f != last:
-                crossings += 1
-                last = f
-    total = fam_counts["A"] + fam_counts["B"]
-    if total == 0:
-        return False
-    if fam_counts["A"]/total < min_family_ratio or fam_counts["B"]/total < min_family_ratio:
-        return False
-    return crossings >= min_crossings
+        bins[int(h // 5) % 36] += 1
+    a_dir = max(range(36), key=lambda b: bins[b]) * 5 + 2.5
+    perp_c = (a_dir + 90.0) % 180.0
+    b_bin = max(range(36), key=lambda b: (bins[b] if ad180(b * 5 + 2.5, perp_c) <= tol else -1))
+    b_dir = b_bin * 5 + 2.5
+    fa = sum(1 for h in heads if ad180(h, a_dir) <= tol) / len(heads)
+    fb = sum(1 for h in heads if ad180(h, b_dir) <= tol) / len(heads)
+    if fa < 0.30 or fb < 0.20 or (fa + fb) < 0.65:
+        return None
+    ar = math.radians(a_dir)
+    br = math.radians(b_dir)
+    ax, ay = math.sin(ar), math.cos(ar)
+    bx, by = math.sin(br), math.cos(br)
+    pa = [p[0] * ax + p[1] * ay for p in xy]
+    pb = [p[0] * bx + p[1] * by for p in xy]
+    span_a, span_b = max(pa) - min(pa), max(pb) - min(pb)
+    if span_a < min_km or span_b < min_km:
+        return None
+    cells = {(int(va // 2.0), int(vb // 2.0)) for va, vb in zip(pa, pb)}
+    if len(cells) < 12:
+        return None
+    if len({c[0] for c in cells}) < 3 or len({c[1] for c in cells}) < 3:
+        return None
+    geom = min(1.0, 0.30 + 0.02 * min(len(cells), 20) + 0.10 * min((fa + fb - 0.65) * 3.0, 1.0))
+    return ("RETICOLATO", geom, max(span_a, span_b), seg[-1].t - seg[0].t)
+
+
+def classify_pattern(seg: List[TP]):
+    """Sceglie il pattern con confidenza geometrica migliore.
+    Ritorna (subtype, laps|None, geom_conf, extent_km, dur_s) o None."""
+    cands = []
+    o = classify_orbit(seg)
+    if o:
+        cands.append((o[0], o[1], o[2], o[3], o[4]))
+    lw = classify_lawnmower(seg)
+    if lw:
+        cands.append((lw[0], None, lw[1], lw[2], lw[3]))
+    g = classify_grid(seg)
+    if g:
+        cands.append((g[0], None, g[1], g[2], g[3]))
+    if not cands:
+        return None
+    return max(cands, key=lambda c: c[2])
+
 
 # ---------------------------
-# Prossimità / formazione
+# Prossimita' / formazione
 # ---------------------------
-def same_direction(h1: Optional[float], h2: Optional[float], tol_deg: float) -> bool:
-    if h1 is None or h2 is None:
-        return False
-    return angle_diff_deg(h1, h2) <= tol_deg
+def heading_xy(p1: Tuple[float, float], p2: Tuple[float, float]) -> Optional[float]:
+    dy = p2[0] - p1[0]
+    dx = p2[1] - p1[1]
+    if dx == 0 and dy == 0:
+        return None
+    return math.degrees(math.atan2(dx, dy)) % 360.0
 
-def approx_following(p_lead: Tuple[float, float], h_lead: Optional[float],
-                     p_trail: Tuple[float, float], h_trail: Optional[float],
-                     tol_deg: float) -> bool:
+
+def approx_following(p_lead, h_lead, p_trail, h_trail, tol_deg) -> bool:
     if h_lead is None or h_trail is None:
         return False
     if angle_diff_deg(h_lead, h_trail) > tol_deg:
         return False
-    bt = heading(p_lead, p_trail)
+    bt = heading_xy(p_lead, p_trail)
     if bt is None:
         return False
     return angle_diff_deg((h_lead + 180.0) % 360.0, bt) <= tol_deg
 
-# ---------------------------
-# Anomaly detection (senza GS bassa e ALT bassa)
-# ---------------------------
-def detect_anomalies(ac: Aircraft, prev: Optional[Aircraft], dt_sec: Optional[float],
-                     max_alt_ft: int,
-                     max_gs_kt: float,
-                     max_vs_fpm: float, max_dgs_kts: float) -> List[str]:
-    seen = set()
-    # Esclude aerei a terra
-    is_ground = False
-    if ac.ground is True:
-        is_ground = True
-    elif ac.alt_baro is not None and ac.alt_baro <= 100 and (ac.gs is None or ac.gs < 60):
-        is_ground = True
-    if is_ground:
-        return []
 
-    if ac.squawk and str(ac.squawk).strip() in {"7500", "7600", "7700"}:
-        seen.add(f"SQUAWK {ac.squawk}")
-    if ac.gs is not None:
-        if ac.gs > max_gs_kt:
-            seen.add(f"GS alta {ac.gs:.0f} kt")
-    if ac.alt_baro is not None:
-        if ac.alt_baro > max_alt_ft:
-            seen.add(f"ALT alta {ac.alt_baro} ft")
-    if prev and dt_sec and dt_sec > 0:
-        if ac.gs is not None and prev.gs is not None:
-            dgs = ac.gs - prev.gs
-            if abs(dgs) > max_dgs_kts:
-                seen.add(f"ΔGS {dgs:+.0f} kt")
-        if ac.alt_baro is not None and prev.alt_baro is not None:
-            vs_fpm = ((ac.alt_baro - prev.alt_baro) / dt_sec) * 60.0
-            if abs(vs_fpm) > max_vs_fpm:
-                seen.add(f"VS {vs_fpm:.0f} fpm")
-    return sorted(seen)
+# ---------------------------
+# Anomalie
+# ---------------------------
+EMERGENCY_SQUAWKS = {"7500", "7600", "7700"}
+
+
+def anomaly_checks(ac: Aircraft, seg: List[TP]) -> List[Tuple[str, str, float]]:
+    """Ritorna lista di (subtype, note, base_conf)."""
+    out = []
+    is_ground = ac.ground is True or (
+        ac.alt_baro is not None and ac.alt_baro <= 100 and (ac.gs is None or ac.gs < 60)
+    )
+    if is_ground:
+        return out
+    sq = (ac.squawk or "").strip()
+    if sq in EMERGENCY_SQUAWKS:
+        out.append((f"SQUAWK-{sq}", f"Squawk di emergenza {sq}", 0.95))
+    alts = [p.alt for p in seg if p.alt is not None]
+    if len(alts) >= 3 and sum(alts) / len(alts) > 45000 and (ac.gs is None or ac.gs > 150):
+        out.append(("QUOTA-ALTA", f"Quota sostenuta ~{int(sum(alts)/len(alts))} ft", 0.55))
+    return out
+
 
 # ---------------------------
 # Database
 # ---------------------------
+NEW_COLUMNS = [
+    ("last_seen_utc", "TEXT"),
+    ("is_mil", "INTEGER DEFAULT 0"),
+    ("subtype", "TEXT"),
+    ("confidence", "REAL"),
+    ("laps", "INTEGER"),
+    ("duration_s", "INTEGER"),
+    ("updates", "INTEGER DEFAULT 1"),
+    ("near_airport", "INTEGER DEFAULT 0"),
+]
+
+INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_events_last_seen  ON events(last_seen_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_events_type_seen  ON events(event_type, first_seen_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_events_subtype    ON events(subtype)",
+    "CREATE INDEX IF NOT EXISTS idx_events_hex        ON events(hex)",
+    "CREATE INDEX IF NOT EXISTS idx_events_callsign   ON events(callsign)",
+    "CREATE INDEX IF NOT EXISTS idx_events_reg        ON events(reg)",
+    "CREATE INDEX IF NOT EXISTS idx_events_squawk     ON events(squawk)",
+    "CREATE INDEX IF NOT EXISTS idx_events_model      ON events(model_t)",
+    "CREATE INDEX IF NOT EXISTS idx_events_mil        ON events(is_mil)",
+    "CREATE INDEX IF NOT EXISTS idx_events_conf       ON events(confidence)",
+]
+
+
 def init_db():
     conn = sqlite3.connect(DB_FILE, timeout=15.0)
-    # WAL: letture web concorrenti senza "database is locked".
-    # synchronous=NORMAL e' sicuro in WAL (perdita al piu' dell'ultima
-    # transazione in caso di crash del SO, mai corruzione del file).
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=15000")
@@ -402,6 +637,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             first_seen_utc TEXT NOT NULL,
+            last_seen_utc TEXT,
             hex TEXT,
             callsign TEXT,
             reg TEXT,
@@ -412,271 +648,416 @@ def init_db():
             gs REAL,
             squawk TEXT,
             ground INTEGER,
+            is_mil INTEGER DEFAULT 0,
             event_type TEXT,
+            subtype TEXT,
             note TEXT,
+            confidence REAL,
+            laps INTEGER,
+            duration_s INTEGER,
+            updates INTEGER DEFAULT 1,
             track_points TEXT,
-            screenshot_path TEXT,   -- riservato per uso futuro, attualmente mai popolato
             near_airport INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    try:
-        conn.execute("ALTER TABLE events ADD COLUMN near_airport INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    # Indici per index.php / api/events.php (filtri e ordinamento).
-    # idx_events_type_seen copre il caso comune "filtra per tipo, ordina per data".
-    for ddl in (
-        "CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen_utc)",
-        "CREATE INDEX IF NOT EXISTS idx_events_type_seen  ON events(event_type, first_seen_utc)",
-        "CREATE INDEX IF NOT EXISTS idx_events_hex        ON events(hex)",
-        "CREATE INDEX IF NOT EXISTS idx_events_callsign   ON events(callsign)",
-    ):
+    # Colonne aggiunte in versioni successive: idempotenti su DB preesistenti.
+    for name, decl in NEW_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
+        except sqlite3.OperationalError:
+            pass
+    for ddl in INDEXES:
         conn.execute(ddl)
     conn.commit()
     return conn
 
-def save_event(conn, timestamp, ac: Aircraft, event_type, note, track: List[Tuple[float, float]],
-               near_airport_flag=0):
-    track_json = json.dumps([{"lat": p[0], "lon": p[1]} for p in track])
-    conn.execute("""
-        INSERT INTO events (first_seen_utc, hex, callsign, reg, model_t,
-                           lat, lon, alt_baro, gs, squawk, ground,
-                           event_type, note, track_points, near_airport)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        timestamp, ac.hex, ac.flight, ac.reg, ac.model_t,
-        ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk,
-        1 if ac.ground else 0,
-        event_type, note, track_json, near_airport_flag
-    ))
+
+def track_json(seg: List[TP]) -> str:
+    return json.dumps([
+        {"lat": round(p.lat, 5), "lon": round(p.lon, 5),
+         "alt": p.alt, "gs": p.gs, "t": int(p.t)}
+        for p in seg
+    ])
+
+
+def episode_upsert(conn, episodes: dict, key, now_ts: float, now_str: str,
+                   ac: Aircraft, event_type: str, subtype: str, note: str,
+                   confidence: float, laps: Optional[int], seg: List[TP],
+                   near_flag: int, episode_gap_s: float) -> Tuple[int, bool]:
+    dur = int(seg[-1].t - seg[0].t) if len(seg) >= 2 else 0
+    tj = track_json(seg)
+    ep = episodes.get(key)
+    if ep and now_ts - ep["last_ts"] <= episode_gap_s:
+        conn.execute("""
+            UPDATE events SET last_seen_utc=?, lat=?, lon=?, alt_baro=?, gs=?, squawk=?,
+                   callsign=?, reg=?, model_t=?, is_mil=?, note=?, confidence=?, laps=?,
+                   duration_s=?, updates=updates+1, track_points=?, near_airport=?
+            WHERE id=?
+        """, (now_str, ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk,
+              ac.flight, ac.reg, ac.model_t, 1 if ac.is_mil else 0, note, confidence,
+              laps, dur, tj, near_flag, ep["id"]))
+        conn.commit()
+        ep["last_ts"] = now_ts
+        return ep["id"], False
+    cur = conn.execute("""
+        INSERT INTO events (first_seen_utc, last_seen_utc, hex, callsign, reg, model_t,
+               lat, lon, alt_baro, gs, squawk, ground, is_mil, event_type, subtype, note,
+               confidence, laps, duration_s, updates, track_points, near_airport)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
+    """, (now_str, now_str, ac.hex, ac.flight, ac.reg, ac.model_t,
+          ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk, 1 if ac.ground else 0,
+          1 if ac.is_mil else 0, event_type, subtype, note, confidence, laps, dur,
+          tj, near_flag))
     conn.commit()
+    eid = cur.lastrowid
+    episodes[key] = {"id": eid, "first_ts": now_ts, "last_ts": now_ts}
+    return eid, True
+
 
 # ---------------------------
-# Main loop
+# Parsing aeromobile
 # ---------------------------
-def main():
+def parse_aircraft(raw: dict) -> Optional[Aircraft]:
+    try:
+        df = raw.get("dbFlags")
+        df = int(df) if df is not None else 0
+    except (TypeError, ValueError):
+        df = 0
+    try:
+        return Aircraft(
+            hex=(raw.get("hex") or "").lower(),
+            flight=(raw.get("flight") or "").strip(),
+            lat=safe_float(raw.get("lat")),
+            lon=safe_float(raw.get("lon")),
+            alt_baro=safe_int(raw.get("alt_baro")),
+            gs=safe_float(raw.get("gs")),
+            ts=safe_float(raw.get("seen_pos_timestamp") or raw.get("seen_pos") or raw.get("seen")),
+            reg=(raw.get("r") or raw.get("reg") or "").strip() or None,
+            squawk=str(raw.get("squawk")).strip() if raw.get("squawk") else None,
+            ground=safe_bool(raw.get("ground")),
+            model_t=(raw.get("t") or None),
+            dbflags=df,
+        )
+    except Exception:
+        return None
+
+
+# ---------------------------
+# Selftest offline
+# ---------------------------
+def _synth(gen, n, dt=30.0, alt=25000, gs=200.0):
+    t0 = time.time()
+    return [TP(lat, lon, alt, gs, t0 + i * dt) for i, (lat, lon) in enumerate(gen(n))]
+
+
+def selftest() -> int:
+    def racetrack(n):
+        # 2 gambe da ~18 km orientate E-W + semicerchi ai capi, ~3 giri
+        pts = []
+        cx, cy = 43.0, 11.0
+        for i in range(n):
+            phase = (i / n) * 3 * 2 * math.pi
+            # parametrizzazione stadio: lungo x, semicerchi in y
+            u = (phase % (2 * math.pi))
+            if u < math.pi:
+                x = -0.11 + (0.22) * (u / math.pi)
+                y = 0.03 * math.sin(u)
+            else:
+                v = u - math.pi
+                x = 0.11 - (0.22) * (v / math.pi)
+                y = -0.03 * math.sin(v)
+            pts.append((cx + y, cy + x))
+        return pts
+
+    def circle(n):
+        cx, cy = 43.0, 11.0
+        return [(cx + 0.09 * math.cos(3 * 2 * math.pi * i / n),
+                 cy + 0.11 * math.sin(3 * 2 * math.pi * i / n)) for i in range(n)]
+
+    def lawn(n):
+        # 6 gambe N-S lunghe ~14 km, spaziate ~2 km in E
+        pts = []
+        legs = 6
+        per = n // legs
+        for L in range(legs):
+            lonoff = L * 0.025
+            for k in range(per):
+                frac = k / per
+                lat = 43.0 + (0.13 * frac if L % 2 == 0 else 0.13 * (1 - frac))
+                pts.append((lat, 11.0 + lonoff))
+        while len(pts) < n:
+            pts.append(pts[-1])
+        return pts
+
+    def grid(n):
+        # copertura area: 5 linee E-W + 5 linee N-S
+        pts = []
+        for L in range(5):
+            latL = 43.0 + L * 0.03
+            for k in range(n // 20):
+                pts.append((latL, 11.0 + 0.15 * (k / (n // 20))))
+        for C in range(5):
+            lonC = 11.0 + C * 0.03
+            for k in range(n // 20):
+                pts.append((43.0 + 0.15 * (k / (n // 20)), lonC))
+        while len(pts) < n:
+            pts.append(pts[-1])
+        return pts
+
+    def line(n):
+        return [(43.0 + 0.006 * i, 11.0 + 0.006 * i) for i in range(n)]
+
+    checks = []
+    o = classify_orbit(_synth(racetrack, 90))
+    checks.append(("racetrack->RACETRACK", o is not None and o[0] == "RACETRACK"))
+    o = classify_orbit(_synth(circle, 90))
+    checks.append(("circle->ORBITA", o is not None and o[0] == "ORBITA"))
+    lw = classify_lawnmower(_synth(lawn, 120))
+    checks.append(("lawn->TAGLIAERBA", lw is not None))
+    g = classify_grid(_synth(grid, 200))
+    checks.append(("grid->RETICOLATO", g is not None))
+    checks.append(("line->nulla", classify_pattern(_synth(line, 90)) is None))
+    checks.append(("line non-orbita", classify_orbit(_synth(line, 90)) is None))
+    # priori
+    ac = Aircraft("ae1234", "FORTE11", 43, 11, 55000, 300, time.time(),
+                  model_t="RQ4", dbflags=1)
+    mil, pr, tg = prior_score(ac)
+    checks.append(("prior RQ4/FORTE/mil", mil and pr >= 0.7))
+    ac2 = Aircraft("3c1234", "DLH123", 43, 11, 36000, 450, time.time(), model_t="A320")
+    _, pr2, _ = prior_score(ac2)
+    checks.append(("prior civ ~0", pr2 == 0.0))
+
+    ok = True
+    for name, res in checks:
+        print(f"  [{'PASS' if res else 'FAIL'}] {name}")
+        ok = ok and res
+    print("SELFTEST:", "OK" if ok else "FALLITO")
+    return 0 if ok else 1
+
+
+# ---------------------------
+# Main
+# ---------------------------
+def build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Monitor ADS-B con poligono")
     ap.add_argument("--interval", type=int, default=60)
-    ap.add_argument("--polygons-file", required=True)
-    ap.add_argument("--max-alt-ft", type=int, default=DEF_MAX_ALT_FT)
-    ap.add_argument("--max-gs-kt", type=float, default=DEF_MAX_GS_KT)
-    ap.add_argument("--max-vs-fpm", type=float, default=DEF_MAX_VS_FPM)
-    ap.add_argument("--max-dgs-kts", type=float, default=DEF_MAX_DGS_KTS)
-    ap.add_argument("--proximity-km", type=float, default=3.0)
-    ap.add_argument("--prox_angle_deg", type=float, default=20.0)
-    ap.add_argument("--prox_alt_diff_ft", type=float, default=500.0)
-    ap.add_argument("--prox_gs_diff_kt", type=float, default=40.0)
-    ap.add_argument("--anomaly-cooldown", type=int, default=300)
-    ap.add_argument("--pattern-cooldown", type=int, default=900)
+    ap.add_argument("--polygons-file")
+    ap.add_argument("--min-confidence", type=float, default=0.25,
+                    help="soglia minima per registrare un PATTERN")
+    ap.add_argument("--segment-gap-s", type=float, default=600.0,
+                    help="buco temporale che apre un nuovo segmento di traccia")
+    ap.add_argument("--episode-gap-s", type=float, default=1200.0,
+                    help="silenzio oltre il quale un episodio si considera chiuso")
+    ap.add_argument("--track-maxlen", type=int, default=300)
+    ap.add_argument("--prune-idle-s", type=float, default=1800.0)
+    ap.add_argument("--proximity-km", type=float, default=2.5)
+    ap.add_argument("--prox_angle_deg", type=float, default=15.0)
+    ap.add_argument("--prox_alt_diff_ft", type=float, default=400.0)
+    ap.add_argument("--prox_gs_diff_kt", type=float, default=35.0)
+    ap.add_argument("--prox-streak", type=int, default=2,
+                    help="cicli consecutivi di prossimita' prima di registrare")
     ap.add_argument("--prox-cooldown", type=int, default=600)
-    ap.add_argument("--loop-min-points", type=int, default=30)
-    ap.add_argument("--loop-close-km", type=float, default=3.0)
-    ap.add_argument("--loop-min-span-km", type=float, default=10.0)
-    ap.add_argument("--loop-min-laps", type=int, default=3)
-    ap.add_argument("--lawn-min-points", type=int, default=14)
-    ap.add_argument("--lawn-heading-tol", type=float, default=15.0)
-    ap.add_argument("--lawn-required-passes", type=int, default=5)
-    ap.add_argument("--lawn-min-span-km", type=float, default=15.0)
-    ap.add_argument("--mesh-min-points", type=int, default=40)
-    ap.add_argument("--mesh-perp-tol", type=float, default=10.0)
-    ap.add_argument("--mesh-min-crossings", type=int, default=6)
+    ap.add_argument("--selftest", action="store_true")
+    return ap
 
-    args = ap.parse_args()
 
-    polygons = load_polygons_from_geojson(args.polygons_file)
+def main():
+    args, _unknown = build_argparser().parse_known_args()
+    if args.selftest:
+        sys.exit(selftest())
+    if not args.polygons_file:
+        print("ERRORE: --polygons-file obbligatorio.", file=sys.stderr)
+        sys.exit(2)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    airports_path = os.path.join(script_dir, 'airports.json')
+    load_priors_override(script_dir)
+    polygons = load_polygons_from_geojson(args.polygons_file)
+    airports_path = os.path.join(script_dir, "airports.json")
     airports = load_airports(airports_path) if os.path.exists(airports_path) else []
 
     conn = init_db()
 
-    track_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=120))
-    prev_state: Dict[str, Aircraft] = {}
-    last_anom_alert: Dict[str, float] = {}
-    last_pattern_alert: Dict[Tuple[str, str], float] = {}
-    last_prox_alert: Dict[Tuple[str, str, str], float] = {}
+    tracks: Dict[str, deque] = defaultdict(lambda: deque(maxlen=args.track_maxlen))
+    last_pt_ts: Dict[str, float] = {}
+    episodes: dict = {}
+    prox_streak: Dict[frozenset, int] = defaultdict(int)
+    last_prox_alert: Dict[tuple, float] = {}
 
-    print("Monitor avviato. Premere Ctrl+C per fermare.")
+    print(f"Monitor avviato (min-confidence={args.min_confidence}). Ctrl+C per fermare.")
     while True:
         t0 = time.time()
         tiles_raw = [fetch_tile(lat, lon, rng) for (lat, lon, rng) in TILES]
         cycle_degraded = any(t is None for t in tiles_raw)
         if cycle_degraded:
-            n_fail = sum(1 for t in tiles_raw if t is None)
-            print(f"[WARN] Ciclo degradato: {n_fail}/{len(TILES)} tile non recuperate; "
-                  f"rilevamento pattern saltato per questo ciclo.", file=sys.stderr)
-        all_raw = [ac for t in tiles_raw if t for ac in t]
+            nf = sum(1 for t in tiles_raw if t is None)
+            print(f"[WARN] Ciclo degradato: {nf}/{len(TILES)} tile mancanti; pattern saltati.",
+                  file=sys.stderr)
+        all_raw = [a for t in tiles_raw if t for a in t]
 
         aircraft: List[Aircraft] = []
-        for ac in all_raw:
-            try:
-                a = Aircraft(
-                    hex=(ac.get("hex") or "").lower(),
-                    flight=(ac.get("flight") or "").strip(),
-                    lat=safe_float(ac.get("lat")),
-                    lon=safe_float(ac.get("lon")),
-                    alt_baro=safe_int(ac.get("alt_baro")),
-                    gs=safe_float(ac.get("gs")),
-                    ts=safe_float(ac.get("seen_pos_timestamp") or ac.get("seen_timestamp")),
-                    reg=(ac.get("r") or ac.get("reg") or "").strip() or None,
-                    squawk=str(ac.get("squawk")).strip() if ac.get("squawk") else None,
-                    ground=safe_bool(ac.get("ground")),
-                    model_t=(ac.get("t") or None),
-                )
+        for raw in all_raw:
+            a = parse_aircraft(raw)
+            if a and a.lat is not None and a.lon is not None:
                 aircraft.append(a)
-            except Exception:
-                continue
-
         if polygons:
             aircraft = [ac for ac in aircraft if in_any_polygon(ac.lat, ac.lon, polygons)]
 
-        # Timestamp UTC corretto
-        now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        now_ts = time.time()
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        seen_now = set()
 
+        # --- aggiorna tracce (con segmentazione sui buchi) ---
         for ac in aircraft:
-            if ac.lat is not None and ac.lon is not None:
-                track_history[ac.hex].append((ac.lat, ac.lon))
+            seen_now.add(ac.hex)
+            prev_t = last_pt_ts.get(ac.hex)
+            if prev_t is not None and now_ts - prev_t > args.segment_gap_s:
+                tracks[ac.hex].clear()
+            tracks[ac.hex].append(TP(ac.lat, ac.lon, ac.alt_baro, ac.gs, now_ts))
+            last_pt_ts[ac.hex] = now_ts
 
-        # --- Pattern ---
-        # Su un ciclo con tile mancanti le tracce possono avere buchi che
-        # falsano il rilevamento (falsa chiusura di loop, pattern spezzati):
-        # si salta. Anomalie e prossimita', puntuali, restano attive.
-        for ac in ([] if cycle_degraded else aircraft):
-            track = list(track_history[ac.hex])
-            if not track:
-                continue
-            pattern = None
-            loop_type = detect_loop_or_racetrack(
-                track,
-                min_points=args.loop_min_points,
-                loop_close_km=args.loop_close_km,
-                min_span_km=args.loop_min_span_km,
-                min_laps=args.loop_min_laps
-            )
-            if loop_type:
-                pattern = loop_type
-            elif detect_lawnmower(track,
-                                  min_points=args.lawn_min_points,
-                                  heading_tolerance=args.lawn_heading_tol,
-                                  required_passes=args.lawn_required_passes,
-                                  min_span_km=args.lawn_min_span_km):
-                pattern = "TAGLIAERBA"
-            elif detect_mesh(track,
-                             min_points=args.mesh_min_points,
-                             perpendicular_tolerance=args.mesh_perp_tol,
-                             min_crossings=args.mesh_min_crossings):
-                pattern = "MESH/RETICOLATO"
+        # --- potatura tracce inattive ---
+        for hx in [h for h, t in last_pt_ts.items() if now_ts - t > args.prune_idle_s]:
+            tracks.pop(hx, None)
+            last_pt_ts.pop(hx, None)
 
-            if pattern:
-                key = (ac.hex, pattern)
-                now_ts = time.time()
-                if now_ts - last_pattern_alert.get(key, 0) >= args.pattern_cooldown:
-                    near_flag = 0
-                    skip = False
-                    if airports:
-                        apt, dist_km = nearest_airport(ac.lat, ac.lon, airports)
-                        if apt and dist_km < apt.get('exclusion_km', 0):
-                            near_flag = 1
-                            if pattern != "MESH/RETICOLATO":
-                                skip = True
-                    if not skip:
-                        save_event(conn, now_str, ac, "PATTERN", pattern, track, near_flag)
-                        print(f"PATTERN {pattern} per {ac.hex} {ac.flight} (near={near_flag})")
-                        last_pattern_alert[key] = now_ts
+        # --- chiusura episodi silenti ---
+        episodes = {k: v for k, v in episodes.items() if now_ts - v["last_ts"] <= args.episode_gap_s}
 
-        # --- Prossimità ---
+        # --- PATTERN ---
+        if not cycle_degraded:
+            for ac in aircraft:
+                seg = list(tracks[ac.hex])
+                if len(seg) < 12:
+                    continue
+                res = classify_pattern(seg)
+                if not res:
+                    continue
+                subtype, laps, geom, extent_km, dur_s = res
+                ac.is_mil, prior, ptags = prior_score(ac)
+                kin, ktags, mean_gs, alt_std, _ = kinematics_score(seg)
+                confidence = max(0.0, min(1.0, 0.45 * geom + kin + prior))
+
+                near_flag = 0
+                if airports:
+                    apt, dkm = nearest_airport(ac.lat, ac.lon, airports)
+                    if apt and dkm < apt.get("exclusion_km", 0):
+                        near_flag = 1
+                        # vicino allo scalo: registra solo se militare o confidenza alta
+                        if not ac.is_mil and confidence < 0.5:
+                            continue
+                if confidence < args.min_confidence:
+                    continue
+
+                bits = [f"conf={confidence:.2f}"]
+                if laps:
+                    bits.append(f"{laps} giri")
+                bits.append(f"~{extent_km:.0f} km")
+                bits.append(f"{int(dur_s // 60)} min")
+                if ptags:
+                    bits.append("prior:" + "/".join(ptags))
+                if ktags:
+                    bits.append("kin:" + "/".join(ktags))
+                note = f"{subtype}; " + "; ".join(bits)
+                key = (ac.hex, "PATTERN", subtype)
+                _eid, is_new = episode_upsert(conn, episodes, key, now_ts, now_str, ac,
+                                              "PATTERN", subtype, note, confidence, laps,
+                                              seg, near_flag, args.episode_gap_s)
+                if is_new:
+                    print(f"PATTERN {subtype} {ac.hex} {ac.flight} conf={confidence:.2f} "
+                          f"(mil={ac.is_mil} near={near_flag})")
+
+        # --- PROSSIMITA' ---
         cur_head: Dict[str, Optional[float]] = {}
         for ac in aircraft:
-            th = track_history[ac.hex]
-            cur_head[ac.hex] = heading(th[-2], th[-1]) if len(th) >= 2 else None
+            th = tracks[ac.hex]
+            if len(th) >= 2:
+                cur_head[ac.hex] = heading_xy((th[-2].lat, th[-2].lon), (th[-1].lat, th[-1].lon))
+            else:
+                cur_head[ac.hex] = None
 
+        pairs_now = set()
         for i, ac1 in enumerate(aircraft):
-            if not (ac1.lat and ac1.lon):
-                continue
-            p1 = (ac1.lat, ac1.lon)
-            h1 = cur_head.get(ac1.hex)
-            for j in range(i+1, len(aircraft)):
+            for j in range(i + 1, len(aircraft)):
                 ac2 = aircraft[j]
-                if not (ac2.lat and ac2.lon):
-                    continue
                 if ac1.hex == ac2.hex:
                     continue
-                p2 = (ac2.lat, ac2.lon)
-                h2 = cur_head.get(ac2.hex)
-                dist = haversine_km(p1, p2)
+                dist = haversine_km((ac1.lat, ac1.lon), (ac2.lat, ac2.lon))
                 if dist >= args.proximity_km:
                     continue
                 alt_ok = (ac1.alt_baro is not None and ac2.alt_baro is not None and
                           abs(ac1.alt_baro - ac2.alt_baro) <= args.prox_alt_diff_ft)
                 gs_ok = (ac1.gs is not None and ac2.gs is not None and
                          abs(ac1.gs - ac2.gs) <= args.prox_gs_diff_kt)
-                dir_ok = same_direction(h1, h2, args.prox_angle_deg)
+                h1, h2 = cur_head.get(ac1.hex), cur_head.get(ac2.hex)
+                dir_ok = (h1 is not None and h2 is not None and angle_diff_deg(h1, h2) <= args.prox_angle_deg)
                 if not (alt_ok and gs_ok and dir_ok):
                     continue
                 label = "CLUSTER"
-                if approx_following(p_lead=p1, h_lead=h1, p_trail=p2, h_trail=h2, tol_deg=args.prox_angle_deg) \
-                   or approx_following(p_lead=p2, h_lead=h2, p_trail=p1, h_trail=h1, tol_deg=args.prox_angle_deg):
+                if approx_following((ac1.lat, ac1.lon), h1, (ac2.lat, ac2.lon), h2, args.prox_angle_deg) or \
+                   approx_following((ac2.lat, ac2.lon), h2, (ac1.lat, ac1.lon), h1, args.prox_angle_deg):
                     label = "INSEGUIMENTO"
-                key = tuple(sorted([ac1.hex, ac2.hex]) + [label])
-                now_ts = time.time()
-                if now_ts - last_prox_alert.get(key, 0) < args.prox_cooldown:
+                pkey = frozenset((ac1.hex, ac2.hex))
+                pairs_now.add(pkey)
+                prox_streak[pkey] += 1
+                if prox_streak[pkey] < args.prox_streak:
+                    continue
+                ckey = (pkey, label)
+                if now_ts - last_prox_alert.get(ckey, 0) < args.prox_cooldown:
                     continue
 
-                near1 = near2 = 0
+                lead, trail = ac1, ac2
+                near_flag = 0
                 if airports:
-                    apt1, d1 = nearest_airport(ac1.lat, ac1.lon, airports)
-                    if apt1 and d1 < apt1.get('exclusion_km', 0):
-                        near1 = 1
-                    apt2, d2 = nearest_airport(ac2.lat, ac2.lon, airports)
-                    if apt2 and d2 < apt2.get('exclusion_km', 0):
-                        near2 = 1
+                    apt, dkm = nearest_airport(lead.lat, lead.lon, airports)
+                    if apt and dkm < apt.get("exclusion_km", 0):
+                        near_flag = 1
+                mil_pair = 0
+                m1, _, _ = prior_score(ac1)
+                m2, _, _ = prior_score(ac2)
+                lead.is_mil = m1 or m2
+                mil_pair = 1 if (m1 or m2) else 0
+                conf = 0.45 + (0.25 if mil_pair else 0.0) + (0.15 if label == "INSEGUIMENTO" else 0.0)
+                note = (f"{label}; peer={trail.hex} {trail.flight or ''}; dist={dist:.1f} km; "
+                        f"conf={conf:.2f}" + ("; mil" if mil_pair else ""))
+                seg = list(tracks[ac1.hex]) or [TP(ac1.lat, ac1.lon, ac1.alt_baro, ac1.gs, now_ts)]
+                key = (pkey, "PROX", label)
+                _eid, is_new = episode_upsert(conn, episodes, key, now_ts, now_str, lead,
+                                              "PROX", label, note, conf, None, seg,
+                                              near_flag, args.episode_gap_s)
+                last_prox_alert[ckey] = now_ts
+                if is_new:
+                    print(f"PROX {label} {ac1.hex}/{ac2.hex} dist={dist:.1f} conf={conf:.2f}")
 
-                note1 = f"{label}; peer={ac2.hex}; dist={dist:.1f} km"
-                note2 = f"{label}; peer={ac1.hex}; dist={dist:.1f} km"
-                save_event(conn, now_str, ac1, "PROX", note1, list(track_history[ac1.hex]), near1)
-                save_event(conn, now_str, ac2, "PROX", note2, list(track_history[ac2.hex]), near2)
-                print(f"PROX {label} {ac1.hex}/{ac2.hex} (near1={near1}, near2={near2})")
-                last_prox_alert[key] = now_ts
+        # streak azzerato per le coppie non piu' vicine
+        for pk in [p for p in prox_streak if p not in pairs_now]:
+            prox_streak.pop(pk, None)
 
-        # --- Anomalie (solo GS alta, ALT alta, ΔGS, VS, squawk) ---
+        # --- ANOMALIE ---
         for ac in aircraft:
-            prev = prev_state.get(ac.hex)
-            dt_sec = None
-            if prev and ac.ts and prev.ts:
-                try:
-                    dt_sec = max(0.0, float(ac.ts) - float(prev.ts))
-                except Exception:
-                    dt_sec = None
-            anomalies = detect_anomalies(
-                ac, prev, dt_sec,
-                args.max_alt_ft,
-                args.max_gs_kt,
-                args.max_vs_fpm, args.max_dgs_kts
-            )
-            if anomalies:
-                now_ts = time.time()
-                if now_ts - last_anom_alert.get(ac.hex, 0) >= args.anomaly_cooldown:
-                    near_flag = 0
-                    skip = False
-                    if airports:
-                        apt, dist_km = nearest_airport(ac.lat, ac.lon, airports)
-                        if apt and dist_km < apt.get('exclusion_km', 0):
-                            near_flag = 1
-                            has_emergency = any("SQUAWK" in a for a in anomalies)
-                            if not has_emergency and ac.alt_baro is not None and ac.alt_baro < 5000:
-                                skip = True
-                    if not skip:
-                        note = "; ".join(anomalies)
-                        save_event(conn, now_str, ac, "ANOMALY", note,
-                                   list(track_history[ac.hex]), near_flag)
-                        print(f"ANOMALY {ac.hex}: {note} (near={near_flag})")
-                        last_anom_alert[ac.hex] = now_ts
-            prev_state[ac.hex] = ac
+            seg = list(tracks[ac.hex])
+            for subtype, note_txt, base_conf in anomaly_checks(ac, seg):
+                near_flag = 0
+                if airports:
+                    apt, dkm = nearest_airport(ac.lat, ac.lon, airports)
+                    if apt and dkm < apt.get("exclusion_km", 0) and not subtype.startswith("SQUAWK"):
+                        near_flag = 1
+                        if ac.alt_baro is not None and ac.alt_baro < 5000:
+                            continue
+                ac.is_mil, prior, ptags = prior_score(ac)
+                conf = max(0.0, min(1.0, base_conf + 0.15 * (1 if ac.is_mil else 0)))
+                note = note_txt + (f"; prior:{'/'.join(ptags)}" if ptags else "")
+                key = (ac.hex, "ANOMALY", subtype)
+                _eid, is_new = episode_upsert(conn, episodes, key, now_ts, now_str, ac,
+                                              "ANOMALY", subtype, note, conf, None,
+                                              seg or [TP(ac.lat, ac.lon, ac.alt_baro, ac.gs, now_ts)],
+                                              near_flag, args.episode_gap_s)
+                if is_new:
+                    print(f"ANOMALY {subtype} {ac.hex}: {note_txt} conf={conf:.2f}")
 
         elapsed = time.time() - t0
-        sleep_for = max(1, int(round(args.interval - elapsed)))
-        time.sleep(sleep_for)
+        time.sleep(max(1, int(round(args.interval - elapsed))))
+
 
 if __name__ == "__main__":
     try:
