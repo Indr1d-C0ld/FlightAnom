@@ -15,7 +15,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!csrf_check()) {
         $error = 'Sessione scaduta, riprova.';
     } else {
-        $res = attempt_login($_POST['username'] ?? '', $_POST['password'] ?? '');
+        try {
+            $res = attempt_login($_POST['username'] ?? '', $_POST['password'] ?? '');
+        } catch (Throwable $e) {
+            error_log('login.php: ' . $e->getMessage());
+            $res = ['ok' => false, 'error' => 'Servizio di accesso non disponibile, riprova tra poco.'];
+        }
         if ($res['ok']) {
             header('Location: ' . $next);
             exit;

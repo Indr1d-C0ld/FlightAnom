@@ -28,11 +28,17 @@ function get_auth_db(): PDO {
     if ($db instanceof PDO) {
         return $db;
     }
-    $db = new PDO('sqlite:' . auth_db_path());
+    $path = auth_db_path();
+    // auth.db e' scritto sia da Apache (www-data) sia dagli script CLI (utente
+    // del deploy): il file e i sidecar devono essere scrivibili dal gruppo.
+    $old_umask = umask(0002);
+    $db = new PDO('sqlite:' . $path);
+    umask($old_umask);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $db->exec('PRAGMA journal_mode=WAL');
     $db->exec('PRAGMA busy_timeout=5000');
+    @chmod($path, 0664);
     $db->exec("CREATE TABLE IF NOT EXISTS users (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         username      TEXT NOT NULL UNIQUE,

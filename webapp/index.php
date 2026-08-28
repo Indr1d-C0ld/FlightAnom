@@ -345,7 +345,7 @@ endif;
                     <?php endif; ?>
                 </td>
                 <td data-label="Compagnia"><?php $op = $ev['operator'] ?? ''; if ($op !== ''): $opl = fa_operator_logo($op); ?><a href="index.php?operator=<?= urlencode($op) ?>&amp;quick_range=all" title="Tutti gli eventi di <?= htmlspecialchars($op) ?> (sempre)"><?php if ($opl): ?><img src="<?= htmlspecialchars($opl) ?>" class="op-logo" alt=""><?php endif; ?><?= htmlspecialchars($op) ?></a><?php endif; ?></td>
-                <td data-label="Reg"><?= htmlspecialchars($ev['reg'] ?? '') ?></td>
+                <td data-label="Reg"><?php $rg = $ev['reg'] ?? ''; if ($rg !== ''): ?><a href="index.php?reg=<?= urlencode($rg) ?>&amp;quick_range=all" title="Tutti gli eventi di <?= htmlspecialchars($rg) ?> (sempre)"><?= htmlspecialchars($rg) ?></a><?php endif; ?></td>
                 <td data-label="Modello"><?php $sil = fa_silhouette_path($ev['model_t'] ?? ''); if ($sil): ?><img src="<?= htmlspecialchars($sil) ?>" class="model-silhouette" alt="" title="<?= htmlspecialchars($ev['model_t']) ?>"><?php endif; ?><?= htmlspecialchars($ev['model_t'] ?? '') ?></td>
                 <td data-label="Squawk"><?= htmlspecialchars($ev['squawk'] ?? '') ?></td>
                 <td data-label="Conf"><?php if ($conf !== null && $conf !== ''): ?><span class="conf conf-<?= $conf >= 0.7 ? 'hi' : ($conf >= 0.4 ? 'mid' : 'lo') ?>"><?= number_format((float)$conf, 2) ?></span><?php endif; ?></td>
