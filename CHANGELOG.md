@@ -76,6 +76,13 @@
   riservate a `collaboratore`/`admin`. Sessione + CSRF + rate-limit;
   utenti in `db/auth.db` separato. `csrf.php` diventa un alias di `auth.php`.
   Rimossa la Basic Auth di sito; `.htaccess.example` aggiornato.
+- **Antifalsi RETICOLATO, giro 2** (ventagli SID/STAR e climb-out):
+  `classify_grid` ora scarta i **corridoi lunghi e stretti** (rapporto fra
+  gli assi > 3.5: un'area 2D vera e' piu' quadrata) e le tracce con
+  **dislivello > 3500 ft** (un raster e' livellato). Nel main loop:
+  RETICOLATO/TAGLIAERBA la cui traccia **inizia o finisce entro 40 km da
+  uno scalo sotto 8000 ft**, o con dislivello > 3200 ft, e' scartata come
+  partenza/avvicinamento.
 - **Antifalsi positivi RETICOLATO**: il pattern ora richiede che la traccia
   si **auto-incroci** (>= `--grid-min-selfx`, default 5) — un raster vero lo
   fa, il ventaglio di SID/STAR no. In più, RETICOLATO/TAGLIAERBA a bassa

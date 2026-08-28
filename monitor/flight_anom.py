@@ -711,6 +711,14 @@ def classify_grid(seg: List[TP], min_points=30, min_km=6.0, tol=15.0, min_selfx=
     span_a, span_b = max(pa) - min(pa), max(pb) - min(pb)
     if span_a < min_km or span_b < min_km:
         return None
+    # Corridoio lungo e stretto (SID/rotta di transito) != area 2D: scarta.
+    if max(span_a, span_b) / (min(span_a, span_b) + 1e-6) > 3.5:
+        return None
+    # Un raster/mesh e' sostanzialmente livellato: se la traccia sale o scende
+    # di oltre ~3500 ft mentre lo disegna, e' una salita/discesa, non un survey.
+    alts = [p.alt for p in seg if p.alt is not None]
+    if alts and (max(alts) - min(alts)) > 3500:
+        return None
     cells = {(int(va // 2.0), int(vb // 2.0)) for va, vb in zip(pa, pb)}
     if len(cells) < 12:
         return None
@@ -1224,6 +1232,15 @@ def selftest() -> int:
     checks.append(("holding: EZY/A20N griglia in discesa -> reject",
                    r is not None and rej is True))
 
+    # partenza SID: hook vicino allo scalo + gamba lunga in salita
+    def departure(n):
+        pts = [(41.80 + 0.004 * math.sin(i / 3.0), 12.25 + 0.004 * math.cos(i / 3.0)) for i in range(20)]
+        pts += [(41.80 + 0.012 * i, 12.20 - 0.006 * i) for i in range(1, 45)]
+        return pts
+    dep = _seg(departure, 90, alt0=2000, alt1=17000, gs=320)
+    checks.append(("partenza SID (corridoio in salita) non e' RETICOLATO",
+                   classify_grid(dep) is None))
+
     ok = True
     for name, res in checks:
         print(f"  [{'PASS' if res else 'FAIL'}] {name}")
@@ -1347,13 +1364,23 @@ def main():
                 if hold_reject and not strong_isr and hold_pen >= args.hold_reject:
                     continue
 
-                # Area terminale: RETICOLATO/TAGLIAERBA a bassa quota vicino a uno
-                # scalo = ventaglio di partenze/avvicinamenti su pista, non un survey.
                 apt, dkm = (nearest_airport(ac.lat, ac.lon, airports) if airports else (None, 1e9))
-                if subtype in ("RETICOLATO", "TAGLIAERBA") and not strong_isr and apt:
-                    seg_min_alt = min((p.alt for p in seg if p.alt is not None), default=99999)
-                    term_km = max(apt.get("exclusion_km", 0), 45.0)
-                    if dkm < term_km and seg_min_alt < 4500:
+
+                # Partenza / avvicinamento: RETICOLATO/TAGLIAERBA la cui TRACCIA
+                # inizia o finisce vicino a uno scalo, oppure che sale/scende
+                # nettamente, e' un ventaglio SID/STAR o un transito, non un survey.
+                if subtype in ("RETICOLATO", "TAGLIAERBA") and not strong_isr and airports:
+                    a0, d0 = nearest_airport(seg[0].lat, seg[0].lon, airports)
+                    a1, d1 = nearest_airport(seg[-1].lat, seg[-1].lon, airports)
+                    salts = [p.alt for p in seg if p.alt is not None]
+                    amin, amax = (min(salts), max(salts)) if salts else (99999, 99999)
+                    endpoint_km = min(d0, d1)
+                    if (endpoint_km < 40.0 and amin < 8000) or (amax - amin) > 3200:
+                        why = "endpoint-scalo" if endpoint_km < 40.0 and amin < 8000 else f"dislivello {amax - amin} ft"
+                        htags.append(f"partenza/avvicinamento ({why})")
+                        continue
+                    # in aggiunta: bassa quota entro l'area terminale dello scalo attuale
+                    if apt and dkm < max(apt.get("exclusion_km", 0), 45.0) and amin < 4500:
                         htags.append(f"area-terminale {apt.get('icao', '')}")
                         continue
 
