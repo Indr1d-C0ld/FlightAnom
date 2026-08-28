@@ -81,6 +81,24 @@ ISR_TYPES = {
     "AT8T", "C208", "P68", "DA42", "DA62", "VUT", "AC90", "C82R",
 }
 
+# Callsign in stile compagnia aerea: 3 lettere ICAO + cifra (RYR86FZ, DLH4AB...)
+AIRLINE_CS_RE = re.compile(r"^[A-Z]{3}\d")
+
+# Tipi ICAO di linea/regionali: non fanno pattern di sorveglianza. Usati SOLO
+# come discriminante "traffico ordinario" (holding/vettoramento), mai come filtro.
+AIRLINER_TYPES = {
+    "A19N", "A20N", "A21N", "A318", "A319", "A320", "A321", "A310", "A306", "A30B",
+    "A332", "A333", "A338", "A339", "A342", "A343", "A345", "A346", "A359", "A35K", "A388",
+    "B712", "B722", "B732", "B733", "B734", "B735", "B736", "B737", "B738", "B739",
+    "B37M", "B38M", "B39M", "B3XM",
+    "B741", "B742", "B743", "B744", "B748", "B752", "B753", "B762", "B763", "B764",
+    "B772", "B773", "B77L", "B77W", "B778", "B779", "B788", "B789", "B78X",
+    "E170", "E75L", "E75S", "E190", "E195", "E290", "E295", "E135", "E145",
+    "CRJ2", "CRJ7", "CRJ9", "CRJX", "AT43", "AT45", "AT72", "AT75", "AT76",
+    "DH8A", "DH8B", "DH8C", "DH8D", "BCS1", "BCS3", "SU95",
+    "MD82", "MD83", "MD88", "MD90", "F70", "F100", "RJ85", "RJ1H",
+}
+
 
 def load_priors_override(script_dir: str) -> None:
     global MIL_HEX_PREFIXES, MIL_CS_RE, ISR_TYPES
@@ -555,6 +573,132 @@ def classify_pattern(seg: List[TP]):
 
 
 # ---------------------------
+# Discriminante "traffico ordinario" (holding ATC / vettoramento)
+# ---------------------------
+def alt_trend(seg: List[TP]) -> Tuple[float, float]:
+    """Regressione lineare della quota nel tempo. Ritorna (pendenza in ft/min,
+    delta totale ft = fine - inizio)."""
+    pts = [(p.t, p.alt) for p in seg if p.alt is not None]
+    if len(pts) < 3:
+        return 0.0, 0.0
+    t0 = pts[0][0]
+    xs = [p[0] - t0 for p in pts]
+    ys = [float(p[1]) for p in pts]
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den <= 0:
+        return 0.0, ys[-1] - ys[0]
+    slope = sum((xs[i] - mx) * (ys[i] - my) for i in range(n)) / den  # ft/s
+    return slope * 60.0, ys[-1] - ys[0]
+
+
+def leg_spacing_cv(seg: List[TP]) -> Optional[float]:
+    """Coefficiente di variazione della spaziatura fra gambe parallele.
+    Un raster vero ha spaziatura regolare (cv basso); un vettoramento no.
+    None se non calcolabile (< 3 gambe distinte)."""
+    xy, _ = _xy_of(seg)
+    heads = leg_headings_mod180(xy)
+    if len(heads) < 6:
+        return None
+    bins = [0] * 36
+    for h in heads:
+        bins[int(h // 5) % 36] += 1
+    dom = math.radians(max(range(36), key=lambda b: bins[b]) * 5 + 2.5)
+    lx, ly = math.sin(dom), math.cos(dom)      # lungo-gamba
+    px, py = math.cos(dom), -math.sin(dom)     # perpendicolare
+    along = [p[0] * lx + p[1] * ly for p in xy]
+    perp = [p[0] * px + p[1] * py for p in xy]
+    offsets: List[float] = []
+    run = [perp[0]]
+    sign = 0
+    for i in range(1, len(along)):
+        d = along[i] - along[i - 1]
+        s = 1 if d > 0.03 else (-1 if d < -0.03 else 0)
+        if s and sign and s != sign:
+            if len(run) >= 3:
+                offsets.append(sum(run) / len(run))
+            run = []
+        if s:
+            sign = s
+        run.append(perp[i])
+    if len(run) >= 3:
+        offsets.append(sum(run) / len(run))
+    if len(offsets) < 3:
+        return None
+    offsets.sort()
+    gaps = [b - a for a, b in zip(offsets, offsets[1:]) if b - a > 0.15]
+    if len(gaps) < 2:
+        return None
+    m = sum(gaps) / len(gaps)
+    if m <= 0:
+        return None
+    sd = (sum((g - m) ** 2 for g in gaps) / len(gaps)) ** 0.5
+    return sd / m
+
+
+def mundane_traffic_penalty(seg: List[TP], ac: "Aircraft", res) -> Tuple[float, bool, List[str]]:
+    """Stima quanto un pattern rilevato somigli a traffico ordinario
+    (attesa ATC / vettoramento) invece che a sorveglianza deliberata.
+    Ritorna (penalita' 0..1, reject_bool, tag). reject NON e' definitivo:
+    in main un prior ISR/militare forte lo scavalca."""
+    subtype, _laps, _geom, extent_km, _dur = res
+    tags: List[str] = []
+    score = 0.0
+
+    cs = (ac.flight or "").upper()
+    is_airline_cs = bool(AIRLINE_CS_RE.match(cs)) and not (MIL_CS_RE.match(cs) if cs else None)
+    is_airline_type = (ac.model_t or "").upper() in AIRLINER_TYPES
+    slope_fpm, dalt = alt_trend(seg)
+    gss = [p.gs for p in seg if p.gs is not None]
+    mean_gs = sum(gss) / len(gss) if gss else None
+
+    if subtype in ("ORBITA", "RACETRACK"):
+        if 4.0 <= extent_km <= 18.0:
+            score += 0.35
+            tags.append("racetrack-compatto")
+        if is_airline_cs:
+            score += 0.25
+            tags.append("callsign-compagnia")
+        if is_airline_type:
+            score += 0.20
+            tags.append("tipo-airliner")
+        # calo netto di quota durante il pattern: un'orbita ISR tiene la quota,
+        # un aereo in attesa scende (stack step-down). Conta il delta, non la pendenza.
+        if dalt < -900 and slope_fpm < 120:
+            score += 0.30
+            tags.append(f"in discesa {int(dalt)} ft")
+        if mean_gs is not None:
+            if 160 <= mean_gs <= 290:
+                score += 0.10
+            elif mean_gs < 150:
+                score -= 0.20
+                tags.append("gs-lenta")
+    elif subtype in ("RETICOLATO", "TAGLIAERBA"):
+        if is_airline_cs:
+            score += 0.30
+            tags.append("callsign-compagnia")
+        if is_airline_type:
+            score += 0.25
+            tags.append("tipo-airliner")
+        if dalt < -900:      # i survey volano livellati
+            score += 0.35
+            tags.append(f"in discesa {int(dalt)} ft")
+        cv = leg_spacing_cv(seg)
+        if cv is not None:
+            if cv > 0.55:
+                score += 0.35
+                tags.append(f"spaziatura irregolare cv={cv:.2f}")
+            elif cv < 0.30:
+                score -= 0.15
+                tags.append("spaziatura regolare")
+
+    score = max(0.0, min(1.0, score))
+    return score, score >= 0.65, tags
+
+
+# ---------------------------
 # Prossimita' / formazione
 # ---------------------------
 def heading_xy(p1: Tuple[float, float], p2: Tuple[float, float]) -> Optional[float]:
@@ -791,16 +935,20 @@ def selftest() -> int:
         return pts
 
     def grid(n):
-        # copertura area: 5 linee E-W + 5 linee N-S
+        # copertura area, a serpentina (boustrophedon): 5 linee E-W poi 5 N-S,
+        # ogni linea invertita rispetto alla precedente -> niente falso loop
         pts = []
+        m = max(4, n // 20)
         for L in range(5):
             latL = 43.0 + L * 0.03
-            for k in range(n // 20):
-                pts.append((latL, 11.0 + 0.15 * (k / (n // 20))))
+            rng = range(m) if L % 2 == 0 else range(m - 1, -1, -1)
+            for k in rng:
+                pts.append((latL, 11.0 + 0.15 * (k / m)))
         for C in range(5):
             lonC = 11.0 + C * 0.03
-            for k in range(n // 20):
-                pts.append((43.0 + 0.15 * (k / (n // 20)), lonC))
+            rng = range(m) if C % 2 == 0 else range(m - 1, -1, -1)
+            for k in rng:
+                pts.append((43.0 + 0.15 * (k / m), lonC))
         while len(pts) < n:
             pts.append(pts[-1])
         return pts
@@ -828,6 +976,59 @@ def selftest() -> int:
     _, pr2, _ = prior_score(ac2)
     checks.append(("prior civ ~0", pr2 == 0.0))
 
+    # --- discriminante holding / traffico ordinario ---
+    def _seg(gen, n, dt=30.0, alt0=25000, alt1=None, gs=200.0):
+        if alt1 is None:
+            alt1 = alt0
+        t0 = time.time()
+        pts = gen(n)
+        return [TP(la, lo, int(alt0 + (alt1 - alt0) * i / max(1, len(pts) - 1)), gs, t0 + i * dt)
+                for i, (la, lo) in enumerate(pts)]
+
+    def small_racetrack(n):
+        pts = []
+        cx, cy = 43.0, 11.0
+        for i in range(n):
+            u = ((i / n) * 3 * 2 * math.pi) % (2 * math.pi)
+            if u < math.pi:
+                x = -0.055 + 0.11 * (u / math.pi); y = 0.018 * math.sin(u)
+            else:
+                v = u - math.pi; x = 0.055 - 0.11 * (v / math.pi); y = -0.018 * math.sin(v)
+            pts.append((cx + y, cy + x))
+        return pts
+
+    # A: racetrack compatto in discesa, callsign+tipo di linea -> scartato
+    s = _seg(small_racetrack, 90, alt0=15000, alt1=11000, gs=230)
+    ac = Aircraft("3c6789", "RYR1234", 43, 11, 13000, 230, time.time(), model_t="B738")
+    r = classify_pattern(s)
+    _p, rej, _t = mundane_traffic_penalty(s, ac, r) if r else (0, False, [])
+    checks.append(("holding: RYR B738 racetrack compatto in discesa -> reject",
+                   r is not None and rej is True))
+
+    # B: racetrack ampio livellato, militare/ISR -> NON scartato
+    s = _seg(racetrack, 90, alt0=45000, gs=380)
+    ac = Aircraft("ae9999", "FORTE22", 43, 11, 45000, 380, time.time(), model_t="RQ4")
+    r = classify_pattern(s)
+    _p, rej, _t = mundane_traffic_penalty(s, ac, r) if r else (0, False, [])
+    checks.append(("holding: FORTE/RQ4 racetrack ampio livellato -> non reject",
+                   r is not None and rej is False))
+
+    # C: survey a spaziatura regolare livellato (C208) -> penalita' bassa
+    s = _seg(lawn, 120, alt0=8000, alt1=8000, gs=120)
+    ac = Aircraft("440abc", "", 43, 11, 8000, 120, time.time(), model_t="C208")
+    r = classify_pattern(s)
+    p, rej, _t = mundane_traffic_penalty(s, ac, r) if r else (1, True, [])
+    checks.append(("holding: survey C208 spaziatura regolare -> preservato",
+                   r is not None and rej is False and p < 0.25))
+
+    # D: "griglia" in discesa con callsign di linea -> scartata
+    s = _seg(grid, 200, alt0=20000, alt1=15000, gs=250)
+    ac = Aircraft("3c1111", "EZY55AB", 43, 11, 17000, 250, time.time(), model_t="A20N")
+    r = classify_pattern(s)
+    _p, rej, _t = mundane_traffic_penalty(s, ac, r) if r else (0, False, [])
+    checks.append(("holding: EZY/A20N griglia in discesa -> reject",
+                   r is not None and rej is True))
+
     ok = True
     for name, res in checks:
         print(f"  [{'PASS' if res else 'FAIL'}] {name}")
@@ -845,6 +1046,9 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--polygons-file")
     ap.add_argument("--min-confidence", type=float, default=0.25,
                     help="soglia minima per registrare un PATTERN")
+    ap.add_argument("--hold-reject", type=float, default=0.65,
+                    help="penalita' 'traffico ordinario' oltre la quale il PATTERN "
+                         "viene scartato (a meno di prior ISR/militare forte). 1.0 = mai")
     ap.add_argument("--segment-gap-s", type=float, default=600.0,
                     help="buco temporale che apre un nuovo segmento di traccia")
     ap.add_argument("--episode-gap-s", type=float, default=1200.0,
@@ -936,7 +1140,15 @@ def main():
                 subtype, laps, geom, extent_km, dur_s = res
                 ac.is_mil, prior, ptags = prior_score(ac)
                 kin, ktags, mean_gs, alt_std, _ = kinematics_score(seg)
-                confidence = max(0.0, min(1.0, 0.45 * geom + kin + prior))
+
+                # Discriminante traffico ordinario (attesa ATC / vettoramento).
+                # Un prior ISR/militare forte scavalca lo scarto.
+                hold_pen, hold_reject, htags = mundane_traffic_penalty(seg, ac, res)
+                strong_isr = ac.is_mil or prior >= 0.30
+                if hold_reject and not strong_isr and hold_pen >= args.hold_reject:
+                    continue
+
+                confidence = max(0.0, min(1.0, 0.45 * geom + kin + prior - hold_pen * 0.40))
 
                 near_flag = 0
                 if airports:
@@ -958,6 +1170,8 @@ def main():
                     bits.append("prior:" + "/".join(ptags))
                 if ktags:
                     bits.append("kin:" + "/".join(ktags))
+                if htags:
+                    bits.append("holding?:" + "/".join(htags))
                 note = f"{subtype}; " + "; ".join(bits)
                 key = (ac.hex, "PATTERN", subtype)
                 _eid, is_new = episode_upsert(conn, episodes, key, now_ts, now_str, ac,

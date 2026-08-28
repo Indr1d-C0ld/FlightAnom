@@ -8,7 +8,11 @@ tipi di evento:
 - **PATTERN** — geometrie di volo: **ORBITA** / **RACETRACK** (rilevati con
   integrale dell'angolo di virata + ellisse PCA, con conteggio dei giri),
   **TAGLIAERBA** (survey a gambe parallele che spazzano un'area), **RETICOLATO**
-  (due direzioni perpendicolari che coprono davvero un'area 2D).
+  (due direzioni perpendicolari che coprono davvero un'area 2D). I pattern
+  circolari e a griglia passano poi da un **discriminante "traffico ordinario"**:
+  attesa ATC / vettoramento (racetrack compatto, callsign e tipo di linea,
+  discesa netta durante il pattern, spaziatura irregolare fra le gambe)
+  abbassano la confidenza o scartano l'evento, salvo prior ISR/militare.
 - **PROX** — aeromobili vicini con rotta/quota/velocità concordi per più cicli
   consecutivi: cluster o inseguimento/formazione.
 - **ANOMALY** — squawk di emergenza (7500/7600/7700), quota sostenuta fuori scala.
@@ -101,6 +105,7 @@ e `deploy/flight-anom.service.sample`); le principali:
 | Argomento | Default | Significato |
 |---|---|---|
 | `--min-confidence` | 0.25 | soglia minima per registrare un PATTERN |
+| `--hold-reject` | 0.65 | penalità "traffico ordinario" (holding ATC / vettoramento) oltre la quale il PATTERN viene scartato, a meno di prior ISR/militare forte. `1.0` per disattivare |
 | `--segment-gap-s` | 600 | buco temporale che apre un nuovo segmento di traccia |
 | `--episode-gap-s` | 1200 | silenzio oltre il quale un episodio si considera chiuso |
 | `--prox-streak` | 2 | cicli consecutivi di prossimità prima di registrare |

@@ -21,6 +21,7 @@ ExecStart=/opt/flight_anom/monitor/venv/bin/python3 /opt/flight_anom/monitor/fli
     --polygons-file /opt/flight_anom/monitor/polygons.json \
     --interval 60 \
     --min-confidence 0.25 \
+    --hold-reject 0.65 \
     --segment-gap-s 600 \
     --episode-gap-s 1200 \
     --prune-idle-s 1800 \

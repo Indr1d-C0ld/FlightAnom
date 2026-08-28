@@ -24,6 +24,13 @@
 - **Anomalie**: tenuti solo squawk d'emergenza e quota sostenuta fuori scala
   (tolti i filtri GS/VS/ΔGS che catturavano glitch del sensore).
 - `flight_anom.py --selftest` per la verifica offline dei classificatori.
+- **Discriminante "traffico ordinario"** su ORBITA/RACETRACK e
+  RETICOLATO/TAGLIAERBA: stima quanto un pattern somigli ad attesa ATC /
+  vettoramento (racetrack compatto 4-18 km, callsign `^[A-Z]{3}\d`, tipo
+  ICAO di linea, calo netto di quota > 900 ft durante il pattern, spaziatura
+  irregolare fra le gambe). Oltre `--hold-reject` (0.65) l'evento e' scartato,
+  altrimenti la confidenza cala di `penalita*0.40`. Un prior ISR/militare
+  forte scavalca sempre lo scarto. Nota `holding?:...` nel testo dell'evento.
 
 ### Aggiunto
 - Prima pubblicazione open source (GPL-3.0) del portale e del monitor.
