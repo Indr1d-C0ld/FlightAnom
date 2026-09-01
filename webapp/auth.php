@@ -188,7 +188,7 @@ function csrf_check(): bool {
 /** Barra di stato accesso per la nav (link Accedi / Esci / Utenti). */
 function auth_nav_html(): string {
     if (!is_logged_in()) {
-        return '<a href="login.php">Accedi</a>';
+        return '<a href="login.php">🔑 Accedi</a>';
     }
     $u = htmlspecialchars(current_user()['username']);
     $r = htmlspecialchars(current_role());
