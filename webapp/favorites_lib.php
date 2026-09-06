@@ -20,6 +20,14 @@ function fa_config(): array {
             // Base URL di un'istanza MilAir ITA per il link 🔍 nella lista eventi.
             // Vuoto = link non mostrato.
             'milair_base_url' => '',
+
+            // --- Assistente di analisi (server LLM locale, Ollama). Opzionale. ---
+            // Vuoto = funzione disattivata: nessun pulsante, nessuna chiamata.
+            'ai_base_url'  => '',                 // es. http://ollama.local:11434
+            'ai_model'     => 'qwen2.5:14b',
+            'ai_num_ctx'   => 16384,              // finestra di contesto richiesta a Ollama
+            'ai_timeout_s' => 420,                // attesa massima della risposta
+            'ai_min_role'  => 'admin',            // ruolo minimo per generare la sintesi
         ];
         $file = __DIR__ . '/config.php';
         $cfg = is_file($file) ? array_merge($defaults, (array) require $file) : $defaults;

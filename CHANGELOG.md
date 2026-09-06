@@ -21,6 +21,26 @@ accesso sono completi; da qui in avanti solo correzioni e rifiniture._
 - Link "📓 Diario" nella barra di navigazione di `index.php`, `stats.php`,
   `favorites.php`. Stili in `assets/style.css` (`.diary-*`, `.msg`, badge voce).
 
+### Diario — sintesi discorsiva assistita da IA (opzionale)
+- **`ai_lib.php`**: integrazione con un server LLM locale ([Ollama](https://ollama.com/)).
+  Disattivata finché `ai_base_url` è vuoto in `config.php` (nessun pulsante,
+  nessuna chiamata). Nuove chiavi: `ai_base_url`, `ai_model` (default
+  `qwen2.5:14b`), `ai_num_ctx`, `ai_timeout_s`, `ai_min_role` (default `admin`).
+- In `diary.php`, per l'admin: pulsante «Genera sintesi IA» che invia il
+  *digest* (non le righe grezze) a `POST /api/chat` con un prompt di sistema
+  fisso da analista OSINT (`num_ctx` esplicito, `temperature` 0.3,
+  `stream:false`); l'esito è salvato in `diary_days.narrative_md` /
+  `narrative_model`. La chiamata parte **solo lato server**; l'URL viene solo
+  dalla configurazione (nessun input utente, nessuna richiesta dal browser).
+- La sintesi è una **bozza**: textarea di revisione + azioni `narrative_save`
+  / `narrative_clear`; al pubblico compare solo dopo la pubblicazione della
+  voce, con nota "redatta con assistenza IA locale … verificare sui record
+  citati". `set_time_limit(0)` + `ignore_user_abort(true)` per l'azione di
+  generazione (modelli locali lenti).
+- Script di sync interni: `ai_lib.php` in whitelist; la rete di sicurezza che
+  vieta la pubblicazione ora intercetta anche gli indirizzi IP privati
+  (RFC1918) eventualmente rimasti nella copia pubblica.
+
 ### Motore di detection — riscrittura
 - **Tracce tempo-consapevoli e segmentate**: ogni punto ha timestamp; un buco
   oltre `--segment-gap-s` apre un nuovo segmento (basta falsi loop da sortite

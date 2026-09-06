@@ -98,6 +98,10 @@ img.flag-icon { height: 11px; width: auto; max-width: 18px; vertical-align: midd
 .diary-jump button:hover, .diary-admin button:hover { background: #e4e7ea; }
 .diary-admin { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 14px; margin: 12px 0 18px; background: #fafbfc; }
 .diary-admin form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.diary-admin hr { width: 100%; border: 0; border-top: 1px solid #e0e0e0; margin: 12px 0; }
+.diary-admin .ai-edit { display: block; }
+.diary-admin textarea { width: 100%; box-sizing: border-box; font: 0.86rem/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 8px; margin: 4px 0 8px; }
+.diary-admin .ai-edit > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .diary-admin .btn-primary { background: #007BFF; border-color: #0069d9; color: #fff; font-weight: 600; }
 .diary-admin .btn-primary:hover { background: #0069d9; }
 .diary-admin .btn-warn { background: #e0a800; border-color: #c69500; color: #fff; font-weight: 600; }

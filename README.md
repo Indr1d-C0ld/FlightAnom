@@ -45,6 +45,7 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/view.php` | dettaglio evento + mappa della traccia |
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
 | `webapp/diary.php` + `diary_lib.php` | diario di bordo: sintesi giornaliera degli eventi (pubblica; pubblicazione delle voci: `admin`) |
+| `webapp/ai_lib.php` | opzionale: chiama un server LLM locale (Ollama) per la sintesi discorsiva del Diario. Disattivato finché `ai_base_url` è vuoto |
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile (scrittura: login) |
 | `webapp/auth.php` + `login.php` + `logout.php` | sessione, ruoli, CSRF |
 | `webapp/auth_useradd.php` | CLI: crea/aggiorna un utente (`admin` / `collaboratore`) |
@@ -200,11 +201,24 @@ ai 14 giorni precedenti — con link ai singoli eventi.
 Il diario è **pubblico in lettura**, ma mostra solo le voci che un `admin` ha
 esplicitamente **pubblicato**: l'admin apre un giorno (il digest viene calcolato
 e messo in cache al primo accesso), lo rivede e clicca «Pubblica nel diario»;
-può anche rigenerare il digest o ritirare una voce. Lo schema `diary_days`
-prevede già i campi `narrative_md` / `narrative_model` per una sintesi
-discorsiva opzionale redatta da un modello locale (non inclusa in questa
-versione): l'idea è che l'IA proponga e l'operatore riveda prima della
-pubblicazione.
+può anche rigenerare il digest o ritirare una voce.
+
+### Sintesi discorsiva assistita da IA (opzionale)
+
+Se `ai_base_url` è valorizzato in `config.php`, la pagina di dettaglio del
+giorno offre all'`admin` (o al ruolo indicato da `ai_min_role`) un pulsante
+**«Genera sintesi IA»**: `ai_lib.php` invia il *digest* (non le righe grezze) a
+un server [Ollama](https://ollama.com/) — tipicamente in LAN — con un prompt di
+sistema fisso da analista OSINT, e salva la risposta in
+`diary_days.narrative_md`. La chiamata parte **solo dal server**; il browser non
+contatta mai il modello e l'URL è preso esclusivamente dalla configurazione.
+
+La sintesi è una **bozza**: l'admin la rilegge (è modificabile in una textarea),
+poi pubblica la voce. Al pubblico compare solo dopo la pubblicazione, con la
+nota che è stata redatta con assistenza IA e va verificata sui record citati.
+Se `ai_base_url` è vuoto la funzione è completamente assente. Chiavi:
+`ai_model`, `ai_num_ctx`, `ai_timeout_s`, `ai_min_role` (vedi
+`config.sample.php`).
 
 ## Dati
 
