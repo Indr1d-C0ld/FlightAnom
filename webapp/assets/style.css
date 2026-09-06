@@ -86,6 +86,29 @@ img.flag-icon { height: 11px; width: auto; max-width: 18px; vertical-align: midd
 .kpi .l { color: #6c757d; font-size: 0.82rem; }
 .bar { background: #007BFF; height: 10px; border-radius: 3px; display: inline-block; vertical-align: middle; max-width: 100%; }
 
+/* Diario di bordo */
+.msg { padding: 8px 12px; border-radius: 6px; margin: 10px 0; }
+.msg.ok { background: #d4edda; color: #155724; }
+.msg.err { background: #f8d7da; color: #721c24; }
+.diary-jump { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+.diary-jump button, .diary-admin button {
+    padding: 6px 12px; border: 1px solid #b9c2cc; border-radius: 5px;
+    background: #f1f3f5; color: #333; cursor: pointer; font: inherit; font-size: 0.9rem;
+}
+.diary-jump button:hover, .diary-admin button:hover { background: #e4e7ea; }
+.diary-admin { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 14px; margin: 12px 0 18px; background: #fafbfc; }
+.diary-admin form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.diary-admin .btn-primary { background: #007BFF; border-color: #0069d9; color: #fff; font-weight: 600; }
+.diary-admin .btn-primary:hover { background: #0069d9; }
+.diary-admin .btn-warn { background: #e0a800; border-color: #c69500; color: #fff; font-weight: 600; }
+.diary-admin .btn-warn:hover { background: #c69500; }
+.diary-narrative { border: 1px solid #d5e3f0; background: #f5f9fd; border-radius: 8px; padding: 4px 18px 12px; margin: 14px 0 20px; }
+.diary-narrative h3 { font-size: 1.02rem; margin: 14px 0 6px; }
+.ai-note { font-size: 0.8rem; color: #6c757d; border-top: 1px solid #d5e3f0; padding-top: 8px; margin-top: 12px; }
+.badge-pub { color: #155724; font-weight: bold; font-size: 0.82rem; }
+.badge-draft { color: #856404; font-weight: bold; font-size: 0.82rem; }
+table.diary-list td, table.diary-list th { padding: 5px 9px; }
+
 /* =====================================================================
    RESPONSIVE — solo entro @media: la vista desktop resta identica.
    ===================================================================== */

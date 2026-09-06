@@ -44,6 +44,7 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/index.php` | elenco eventi: filtri (HEX/callsign/reg/squawk/modello/conf/mil/date), ordinamento, paginazione, toggle ⭐ |
 | `webapp/view.php` | dettaglio evento + mappa della traccia |
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
+| `webapp/diary.php` + `diary_lib.php` | diario di bordo: sintesi giornaliera degli eventi (pubblica; pubblicazione delle voci: `admin`) |
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile (scrittura: login) |
 | `webapp/auth.php` + `login.php` + `logout.php` | sessione, ruoli, CSRF |
 | `webapp/auth_useradd.php` | CLI: crea/aggiorna un utente (`admin` / `collaboratore`) |
@@ -186,6 +187,24 @@ da schedulare via cron (vedi `deploy/crontab.sample`). Sorgente predefinita
 `flightdb.net`, sovrascrivibile con la variabile d'ambiente `SILHOUETTE_SRC`
 (p.es. un mirror del pack silhouette di VirtualRadarServer). In alternativa si
 può copiare a mano un pack esistente in `silhouettes/`.
+
+## Diario di bordo
+
+`diary.php` raccoglie una **sintesi giornaliera** degli eventi (una voce per
+giorno, fuso Europe/Rome). Ogni voce ha un **digest deterministico** calcolato
+via SQL — totali, per tipo/sottotipo/ora, compagnie e nazioni, mezzi ricorrenti
+nella giornata, eventi ad alta confidenza, squawk d'emergenza, prossimità,
+episodi più lunghi / con più giri, zone con più pattern, attori "nuovi" rispetto
+ai 14 giorni precedenti — con link ai singoli eventi.
+
+Il diario è **pubblico in lettura**, ma mostra solo le voci che un `admin` ha
+esplicitamente **pubblicato**: l'admin apre un giorno (il digest viene calcolato
+e messo in cache al primo accesso), lo rivede e clicca «Pubblica nel diario»;
+può anche rigenerare il digest o ritirare una voce. Lo schema `diary_days`
+prevede già i campi `narrative_md` / `narrative_model` per una sintesi
+discorsiva opzionale redatta da un modello locale (non inclusa in questa
+versione): l'idea è che l'IA proponga e l'operatore riveda prima della
+pubblicazione.
 
 ## Dati
 

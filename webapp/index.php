@@ -236,7 +236,7 @@ endif;
 <body>
 <div class="container">
     <h1>✈️ Flight Anomaly Monitor</h1>
-    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
+    <p class="nav-links"><a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <a href="diary.php">📓 Diario</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <form method="GET" class="filters" id="filterForm">
         <select name="event_type">
             <option value="">Tutti i tipi</option>

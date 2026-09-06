@@ -3,7 +3,23 @@
 ## Non ancora rilasciato
 
 _Progetto in revisione finale: motore di detection, portale ed ecosistema di
-accesso sono completi; da qui in avanti solo correzioni._
+accesso sono completi; da qui in avanti solo correzioni e rifiniture._
+
+### Diario di bordo
+- **`diary.php` + `diary_lib.php`**: sezione "Diario di bordo" con una sintesi
+  per giorno (fuso Europe/Rome). Il **digest** è deterministico (solo SQL):
+  totali, per tipo/sottotipo/ora, compagnie/nazioni, mezzi ricorrenti nella
+  giornata, eventi ad alta confidenza (≥ 0.70), squawk d'emergenza, prossimità,
+  episodi più lunghi / con più giri, zone con più pattern (celle ~0.5°),
+  operatori/nazioni "nuovi" e callsign ricorrenti rispetto ai 14 giorni
+  precedenti — con link ai singoli eventi.
+- Pubblico in lettura **solo per le voci pubblicate**; l'`admin` apre un giorno
+  (digest calcolato e messo in cache al primo accesso), lo rivede e lo pubblica,
+  può rigenerarlo o ritirarlo. Nuova tabella `diary_days` (creata pigramente;
+  aggiunta a `schema.sql`), con i campi `narrative_md` / `narrative_model` già
+  previsti per una futura sintesi discorsiva assistita da modello locale.
+- Link "📓 Diario" nella barra di navigazione di `index.php`, `stats.php`,
+  `favorites.php`. Stili in `assets/style.css` (`.diary-*`, `.msg`, badge voce).
 
 ### Motore di detection — riscrittura
 - **Tracce tempo-consapevoli e segmentate**: ogni punto ha timestamp; un buco

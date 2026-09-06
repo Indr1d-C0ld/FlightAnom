@@ -113,7 +113,7 @@ foreach ($conf_buckets as $r) { $bi = max(0, min(3, (int) $r['b'])); $bucket_map
 </head>
 <body>
 <div class="container">
-    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
+    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <a href="diary.php">📓 Diario</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <h1>📊 Statistiche</h1>
 
     <div class="kpi-row">

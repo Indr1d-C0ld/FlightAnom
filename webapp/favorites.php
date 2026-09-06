@@ -77,7 +77,7 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
 </head>
 <body>
 <div class="container">
-    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
+    <p class="nav-links"><a href="index.php">← Eventi</a> <a href="favorites.php">⭐ Preferiti</a> <a href="stats.php">📊 Statistiche</a> <a href="diary.php">📓 Diario</a> <span style="float:right;"><?= auth_nav_html() ?></span></p>
     <h1>⭐ Eventi preferiti</h1>
 
     <?php if ($load_error): ?>

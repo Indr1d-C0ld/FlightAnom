@@ -60,6 +60,23 @@ CREATE TABLE IF NOT EXISTS favorites (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Diario di bordo: una riga per giorno (fuso Europe/Rome). digest_json contiene
+-- gli aggregati deterministici; narrative_md una sintesi opzionale assistita da
+-- IA locale; published=1 la rende visibile nel diario pubblico (diary.php).
+-- Creata pigramente da diary_lib.php.
+CREATE TABLE IF NOT EXISTS diary_days (
+    day                    TEXT PRIMARY KEY,        -- 'YYYY-MM-DD'
+    digest_json            TEXT NOT NULL,
+    digest_generated_at    TEXT NOT NULL,
+    event_count            INTEGER NOT NULL DEFAULT 0,
+    narrative_md           TEXT,
+    narrative_model        TEXT,
+    narrative_generated_at TEXT,
+    published              INTEGER NOT NULL DEFAULT 0,
+    published_at           TEXT,
+    updated_at             TEXT
+);
+
 -- ---------------------------------------------------------------------------
 -- Utenti / sessioni: database SEPARATO (db/auth.db), creato da auth.php.
 -- Ruoli: 'collaboratore' (gestisce i preferiti), 'admin' (+ utenti).
