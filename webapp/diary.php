@@ -293,10 +293,11 @@ $page_title = $detail ? ('Diario · ' . d_day_it($day)) : 'Diario di bordo';
         <?php if (ai_enabled()): ?>
         <hr>
         <form method="post" action="diary.php" class="ai-gen"
-              onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Generazione in corso… (può richiedere qualche minuto)';">
+              onsubmit="var b=this.querySelector('button');b.textContent='Generazione in corso… (può richiedere qualche minuto)';b.disabled=true;">
             <?= csrf_field() ?>
             <input type="hidden" name="day" value="<?= d_h($day) ?>">
-            <button type="submit" name="action" value="narrative">
+            <input type="hidden" name="action" value="narrative">
+            <button type="submit">
                 <?= $has_narr ? '🧠 Rigenera sintesi IA' : '🧠 Genera sintesi IA' ?>
             </button>
             <span class="muted">Modello locale · la bozza va riletta prima della pubblicazione.</span>
