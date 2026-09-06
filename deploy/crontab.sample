@@ -5,6 +5,13 @@
 # Ogni 6 ore: scarica le silhouette mancanti per i tipi velivolo visti negli eventi
 0 */6 * * *  /usr/bin/php /opt/flight_anom/download_silhouettes.php >> /opt/flight_anom/silhouettes.log 2>&1
 
+# 00:15 ogni giorno: costruisce e pubblica nel Diario la voce di IERI (solo il
+# digest deterministico; la sintesi IA resta un passo manuale). Idempotente;
+# rispetta un eventuale "Ritira dal diario" fatto a mano dall'admin.
+15 0 * * *  /usr/bin/php /opt/flight_anom/diary_build.php --publish --quiet >> /opt/flight_anom/diary.log 2>&1
+# Primo popolamento / dopo un fermo prolungato:
+#   php /opt/flight_anom/diary_build.php --publish --backfill=30
+
 # Loghi compagnia: seed una tantum da OperatorFlags.zip, poi per-codice se serve
 #   php /opt/flight_anom/download_opflags.php --zip /percorso/OperatorFlags.zip
 # 0 */6 * * *  OPFLAGS_SRC=https://mio-mirror/opflags/ /usr/bin/php /opt/flight_anom/download_opflags.php >> /opt/flight_anom/opflags.log 2>&1

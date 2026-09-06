@@ -46,6 +46,7 @@ Nessun framework, nessun database server, nessuna build.
 | `webapp/stats.php` | statistiche del portale e del DB, classifiche |
 | `webapp/diary.php` + `diary_lib.php` | diario di bordo: sintesi giornaliera degli eventi (pubblica; pubblicazione delle voci: `admin`) |
 | `webapp/ai_lib.php` | opzionale: chiama un server LLM locale (Ollama) per la sintesi discorsiva del Diario. Disattivato finché `ai_base_url` è vuoto |
+| `webapp/diary_build.php` | CLI/cron: costruisce (e con `--publish` pubblica) la voce di Diario di ieri o di un intervallo (`--backfill=N`) |
 | `webapp/favorites.php` + `edit_favorite.php` + `toggle_favorite.php` | eventi preferiti con nota annotabile (scrittura: login) |
 | `webapp/auth.php` + `login.php` + `logout.php` | sessione, ruoli, CSRF |
 | `webapp/auth_useradd.php` | CLI: crea/aggiorna un utente (`admin` / `collaboratore`) |
@@ -198,10 +199,23 @@ nella giornata, eventi ad alta confidenza, squawk d'emergenza, prossimità,
 episodi più lunghi / con più giri, zone con più pattern, attori "nuovi" rispetto
 ai 14 giorni precedenti — con link ai singoli eventi.
 
-Il diario è **pubblico in lettura**, ma mostra solo le voci che un `admin` ha
-esplicitamente **pubblicato**: l'admin apre un giorno (il digest viene calcolato
-e messo in cache al primo accesso), lo rivede e clicca «Pubblica nel diario»;
-può anche rigenerare il digest o ritirare una voce.
+Il diario è **pubblico in lettura**, ma mostra solo le voci **pubblicate**.
+Manualmente: l'admin apre un giorno (il digest viene calcolato e messo in cache
+al primo accesso), lo rivede e clicca «Pubblica nel diario»; può anche
+rigenerare il digest o ritirare una voce.
+
+In automatico: `diary_build.php` da cron costruisce e pubblica ogni giorno la
+voce di **ieri** (solo il digest deterministico — la sintesi IA resta manuale):
+
+```bash
+php webapp/diary_build.php --publish              # digest di ieri + pubblicazione
+php webapp/diary_build.php --day=2026-09-01        # un giorno preciso (senza pubblicare)
+php webapp/diary_build.php --publish --backfill=30 # primo popolamento / dopo un fermo
+```
+
+È idempotente e **rispetta un «Ritira dal diario» fatto a mano** (non ripubblica
+un giorno già pubblicato in passato e poi ritirato). Riga di cron in
+`deploy/crontab.sample`.
 
 ### Sintesi discorsiva assistita da IA (opzionale)
 

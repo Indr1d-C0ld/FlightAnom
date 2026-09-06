@@ -20,6 +20,12 @@ accesso sono completi; da qui in avanti solo correzioni e rifiniture._
   previsti per una futura sintesi discorsiva assistita da modello locale.
 - Link "📓 Diario" nella barra di navigazione di `index.php`, `stats.php`,
   `favorites.php`. Stili in `assets/style.css` (`.diary-*`, `.msg`, badge voce).
+- **`diary_build.php`** (CLI/cron): costruisce il digest di **ieri** e con
+  `--publish` pubblica la voce; `--day=YYYY-MM-DD` per un giorno preciso,
+  `--backfill=N` per gli ultimi N giorni, `--quiet` per il cron. Idempotente;
+  `--publish` non ripubblica un giorno che l'admin ha pubblicato e poi
+  ritirato a mano (`published_at` valorizzato, `published=0`). Riga in
+  `deploy/crontab.sample` (00:15, `--publish --quiet`).
 
 ### Diario — sintesi discorsiva assistita da IA (opzionale)
 - **`ai_lib.php`**: integrazione con un server LLM locale ([Ollama](https://ollama.com/)).
