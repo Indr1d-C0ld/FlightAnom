@@ -184,13 +184,13 @@ $popup_json = json_encode([
     } else if (track && track.length > 0) {
         const last = track[track.length-1];
         const map = L.map('map').setView([last.lat, last.lon], 10);
-        // Tile di CARTO (basati su dati OSM): i server tile.openstreetmap.org
-        // rifiutano ormai il traffico degli hosting self-hosted come questo
-        // (403 "Access blocked" per policy anti-abuso).
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 20
+        // Tile: tile.openstreetmap.org blocca ormai questo traffico (403 policy
+        // anti-abuso) e i tile CARTO anonimi richiedono adesso una API key.
+        // Esri World Street Map non richiede chiave per uso leggero come questo.
+        // Nota: l'URL Esri usa l'ordine {z}/{y}/{x} (non {z}/{x}/{y}).
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ',
+            maxZoom: 19
         }).addTo(map);
 
         const latlngs = track.map(p => [p.lat, p.lon]);
