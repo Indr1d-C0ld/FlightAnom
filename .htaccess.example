@@ -10,7 +10,15 @@
 <FilesMatch "\.(db|db-wal|db-shm|sqlite|sqlite3|sql)$">
     Require all denied
 </FilesMatch>
-<FilesMatch "^(config\.php|auth\.php|favorites_lib\.php|csrf\.php|auth_useradd\.php)$">
+# File di solo include (definiscono funzioni, non producono output) e script CLI.
+# Aggiornare questo elenco quando se ne aggiungono: un include raggiungibile non
+# espone nulla oggi, ma non deve diventare una sorpresa domani.
+<FilesMatch "^(config\.php|config\.sample\.php|auth\.php|favorites_lib\.php|ai_lib\.php|diary_lib\.php|csrf\.php|auth_useradd\.php|diary_build\.php|priors\.json)$">
+    Require all denied
+</FilesMatch>
+# Artefatti di deployment: unit systemd, script, esempi. Rivelano percorsi,
+# utente di esecuzione e configurazione del demone.
+<FilesMatch "\.(service|sh|sample|example|yml|yaml|ini|conf|log)$">
     Require all denied
 </FilesMatch>
 
@@ -23,5 +31,7 @@
     Header always set Referrer-Policy "same-origin"
     # 'unsafe-inline' necessario: <script> inline, handler onclick/onsubmit,
     # attributi style=. view.php carica Leaflet da unpkg.com con SRI.
-    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
+    # img-src deve elencare il server dei tile usato da view.php: se si cambia
+    # fornitore di mappa, va aggiornato qui o la mappa resta bianca.
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
 </IfModule>

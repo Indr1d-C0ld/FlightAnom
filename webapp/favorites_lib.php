@@ -39,6 +39,17 @@ function fav_db_path(): string {
     return fa_config()['db_path'];
 }
 
+/**
+ * Prepara un termine di ricerca per una clausola LIKE ... ESCAPE '\'.
+ * In SQL `_` vale "un carattere qualsiasi" e `%` "qualunque sequenza": senza
+ * neutralizzarli, cercare `RYR___` restituisce ogni callsign che contiene RYR
+ * seguito da tre caratteri, invece dei soli RYR___ letterali. Va usata SEMPRE
+ * insieme a ESCAPE, altrimenti le barre rovesciate restano nel confronto.
+ */
+function fa_like_term(string $needle): string {
+    return '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $needle) . '%';
+}
+
 function fav_open(bool $writable = false): PDO {
     $path = fav_db_path();
     if (!$writable && !file_exists($path)) {

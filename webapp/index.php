@@ -64,8 +64,9 @@ foreach (['hex' => 'hex', 'callsign' => 'callsign', 'reg' => 'reg',
           'squawk' => 'squawk', 'model' => 'model_t',
           'country' => 'country', 'operator' => 'operator'] as $qs => $col) {
     if (!empty($_GET[$qs])) {
-        $where[] = "$col LIKE ?";
-        $params[] = '%' . $_GET[$qs] . '%';
+        // ESCAPE: '_' e '%' digitati dall'utente sono testo, non jolly SQL
+        $where[] = "$col LIKE ? ESCAPE '\\'";
+        $params[] = fa_like_term((string) $_GET[$qs]);
     }
 }
 $min_conf = isset($_GET['min_conf']) && is_numeric($_GET['min_conf'])
@@ -135,15 +136,12 @@ try {
     // Preferiti: set di event_id per la stella e (se richiesto) per filtrare
     $fav_set = fav_id_set($pdo);
     if ($only_fav) {
-        if ($fav_set) {
-            $ph = implode(',', array_fill(0, count($fav_set), '?'));
-            $where[] = "id IN ($ph)";
-            foreach (array_keys($fav_set) as $eid) {
-                $params[] = $eid;
-            }
-        } else {
-            $where[] = "1 = 0"; // nessun preferito -> nessun risultato
-        }
+        // Sottoquery invece di IN (?,?,...): un placeholder per preferito
+        // supererebbe il tetto di variabili di SQLite quando i preferiti
+        // crescono, e il filtro smetterebbe di funzionare senza preavviso.
+        $where[] = fav_table_exists($pdo)
+            ? "id IN (SELECT event_id FROM favorites)"
+            : "1 = 0";   // tabella non ancora creata -> nessun preferito
     }
 
     // Conta il totale dei record con i filtri attivi
@@ -229,7 +227,10 @@ endif;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <?php if ($can_edit): /* il token serve solo a chi puo' scrivere: chiederlo
+          sempre avvierebbe una sessione anche per ogni visitatore anonimo */ ?>
     <meta name="csrf-token" content="<?= htmlspecialchars(csrf_token()) ?>">
+    <?php endif; ?>
     <title>Flight Anomaly Monitor</title>
     <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -432,11 +433,13 @@ function fallbackCopy(text) {
     document.body.removeChild(textarea);
 }
 
-// --- Preferiti: toggle ⭐ per evento ---
-const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
+// --- Preferiti: toggle ⭐ per evento (solo per chi e' autenticato: senza
+//     token non ci sono nemmeno i pulsanti) ---
+const CSRF_META = document.querySelector('meta[name="csrf-token"]');
+const CSRF_TOKEN = CSRF_META ? CSRF_META.content : '';
 document.addEventListener('click', e => {
     const btn = e.target.closest('.fav-btn');
-    if (!btn) return;
+    if (!btn || !CSRF_TOKEN) return;
     const id = btn.dataset.id;
     btn.disabled = true;
     fetch('toggle_favorite.php', {

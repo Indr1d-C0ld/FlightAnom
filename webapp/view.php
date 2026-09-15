@@ -52,6 +52,9 @@ $popup_json = json_encode([
 <html lang="it">
 <head>
     <meta charset="UTF-8">
+    <!-- senza questo le @media qui sotto non scattano su smartphone: la pagina
+         verrebbe resa alla larghezza desktop e poi rimpicciolita -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Evento <?= htmlspecialchars($event['hex']) ?></title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
@@ -197,12 +200,23 @@ $popup_json = json_encode([
         L.polyline(latlngs, {color: 'red', weight: 3}).addTo(map);
 
         const marker = L.marker([last.lat, last.lon]).addTo(map);
-        marker.bindPopup(
-            '<b>' + (ev.callsign || '') + ' (' + (ev.hex || '') + ')</b><br>' +
-            'Alt: ' + (ev.alt ?? '') + ' ft<br>' +
-            'GS: ' + (ev.gs ?? '') + ' kt<br>' +
-            'Squawk: ' + (ev.squawk ?? '')
-        ).openPopup();
+
+        // bindPopup() inserisce come innerHTML. I campi arrivano verbatim dal
+        // feed ADS-B (nessun cap di lunghezza ne' whitelist a monte), quindi si
+        // costruisce il nodo con textContent invece di concatenare HTML.
+        const pop = document.createElement('div');
+        const line = (label, value) => {
+            const d = document.createElement('div');
+            d.textContent = label + (value ?? '');
+            return d;
+        };
+        const head = document.createElement('b');
+        head.textContent = (ev.callsign || '') + ' (' + (ev.hex || '') + ')';
+        pop.appendChild(head);
+        pop.appendChild(line('Alt: ', ev.alt !== null && ev.alt !== undefined ? ev.alt + ' ft' : ''));
+        pop.appendChild(line('GS: ',  ev.gs  !== null && ev.gs  !== undefined ? ev.gs  + ' kt' : ''));
+        pop.appendChild(line('Squawk: ', ev.squawk));
+        marker.bindPopup(pop).openPopup();
     } else {
         mapEl.innerText = 'Nessuna traccia disponibile.';
     }

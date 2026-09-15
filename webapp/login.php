@@ -2,7 +2,7 @@
 // login.php - Accesso per collaboratori/admin.
 ini_set('display_errors', '0');
 require_once __DIR__ . '/auth.php';
-auth_bootstrap();
+auth_bootstrap(true);   // qui la sessione serve sempre: ospita il token CSRF del form
 
 $next = $_GET['next'] ?? $_POST['next'] ?? 'index.php';
 // Consenti solo URL relativi allo stesso portale.

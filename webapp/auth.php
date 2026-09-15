@@ -60,22 +60,50 @@ function get_auth_db(): PDO {
     return $db;
 }
 
-function auth_bootstrap(): void {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        $sp = __DIR__ . '/sessions';
-        if (!is_dir($sp)) {
-            @mkdir($sp, 0770, true);
+/**
+ * Avvia la sessione. PIGRA per default: il portale e' pubblico in lettura e la
+ * stragrande maggioranza delle richieste (visitatori anonimi, bot, crawler) non
+ * ha bisogno di alcuno stato lato server. Avviare comunque la sessione creava
+ * un file per ogni richiesta senza cookie, che nessuno rimuoveva (vedi il GC
+ * qui sotto): migliaia di file accumulati in poche settimane.
+ *
+ * La sessione parte solo se: il client ne ha gia' una (cookie presente), la
+ * richiesta e' una POST (serve la verifica CSRF), oppure la pagina la richiede
+ * esplicitamente con $force (login.php, csrf_token()).
+ */
+function auth_bootstrap(bool $force = false): void {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        if (empty($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
-        if (is_dir($sp) && is_writable($sp)) {
-            session_save_path($sp);
-        }
-        session_set_cookie_params([
-            'lifetime' => 0, 'path' => '/',
-            'secure' => !empty($_SERVER['HTTPS']),
-            'httponly' => true, 'samesite' => 'Lax',
-        ]);
-        session_start();
+        return;
     }
+    if (!$force
+        && !isset($_COOKIE[session_name()])
+        && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+        return;   // visitatore anonimo su una pagina di sola lettura
+    }
+
+    $sp = __DIR__ . '/sessions';
+    if (!is_dir($sp)) {
+        @mkdir($sp, 0770, true);
+    }
+    if (is_dir($sp) && is_writable($sp)) {
+        session_save_path($sp);
+        // Debian imposta session.gc_probability=0 e delega la pulizia a
+        // phpsessionclean.timer, che pero' guarda solo il save_path di sistema:
+        // su un save_path nostro non passerebbe mai nessuno. Riattiviamo il GC
+        // di PHP, che e' l'unico che vede questa cartella.
+        ini_set('session.gc_probability', '1');
+        ini_set('session.gc_divisor', '100');
+        ini_set('session.gc_maxlifetime', '86400');   // 24 h
+    }
+    session_set_cookie_params([
+        'lifetime' => 0, 'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']),
+        'httponly' => true, 'samesite' => 'Lax',
+    ]);
+    session_start();
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
@@ -86,8 +114,16 @@ function is_logged_in(): bool   { return current_user() !== null; }
 function current_role(): string { return current_user()['role'] ?? 'pubblico'; }
 
 function log_login_attempt(string $u, string $ip, bool $ok): void {
-    $s = get_auth_db()->prepare("INSERT INTO login_attempts (username, ip, success) VALUES (?,?,?)");
-    $s->execute([$u, $ip, $ok ? 1 : 0]);
+    $db = get_auth_db();
+    $db->prepare("INSERT INTO login_attempts (username, ip, success) VALUES (?,?,?)")
+       ->execute([$u, $ip, $ok ? 1 : 0]);
+    // La tabella serve solo alla finestra di rate-limit (15 minuti): senza
+    // potatura crescerebbe per sempre. Si tiene una settimana, abbastanza per
+    // dare un'occhiata ai tentativi recenti. Potatura saltuaria (1 su 50) per
+    // non pagarla a ogni login.
+    if (random_int(1, 50) === 1) {
+        $db->exec("DELETE FROM login_attempts WHERE created_at < datetime('now','-7 days')");
+    }
 }
 
 /** ['ok'=>bool, 'error'=>?string]. Errore sempre generico. */
@@ -172,6 +208,11 @@ function require_role(string $minRole, bool $json = false): void {
 
 // --- CSRF -----------------------------------------------------------------
 function csrf_token(): string {
+    // Un token ha senso solo se c'e' una sessione in cui ricordarlo: chiedendolo
+    // si forza l'avvio (auth_bootstrap e' pigro per i visitatori anonimi).
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        auth_bootstrap(true);
+    }
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }

@@ -9,8 +9,41 @@ require_once __DIR__ . '/diary_lib.php';
 require_once __DIR__ . '/ai_lib.php';
 
 $is_admin = (current_role() === 'admin');
-$msg = (string) ($_GET['m'] ?? '');
-$err = (string) ($_GET['e'] ?? '');
+
+/**
+ * Esiti delle azioni admin. Passano per la querystring (redirect PRG), quindi
+ * NON possono essere testo libero: chiunque potrebbe linkare la pagina pubblica
+ * con un messaggio a piacere e farlo comparire nel banner verde del portale.
+ * Viaggia solo un codice, la frase sta qui. Il segnaposto %s e' il giorno, gia'
+ * validato da diary_valid_day().
+ */
+const DIARY_MSG = [
+    'refreshed'   => ['ok',  'Digest del %s rigenerato.'],
+    'published'   => ['ok',  'Voce del %s pubblicata nel diario.'],
+    'unpublished' => ['ok',  'Voce del %s ritirata dal diario pubblico.'],
+    'narrated'    => ['ok',  'Sintesi IA generata per il %s. Rileggila prima di pubblicare.'],
+    'narr_saved'  => ['ok',  'Testo della sintesi del %s salvato.'],
+    'narr_empty'  => ['ok',  'Sintesi del %s svuotata.'],
+    'narr_clear'  => ['ok',  'Sintesi IA del %s eliminata.'],
+    'csrf'        => ['err', 'Sessione scaduta, ricarica la pagina.'],
+    'badday'      => ['err', 'Data non valida.'],
+    'badaction'   => ['err', 'Azione sconosciuta.'],
+    'noai'        => ['err', 'Assistente IA non configurato.'],
+    'noperm'      => ['err', 'Permessi insufficienti per la sintesi IA.'],
+    'aifail'      => ['err', 'Sintesi non generata: il server del modello non ha risposto. La workstation è accesa?'],
+    'failed'      => ['err', 'Operazione non riuscita.'],
+];
+
+$msg = $err = '';
+$code = (string) ($_GET['m'] ?? '');
+if (isset(DIARY_MSG[$code])) {
+    [$kind, $tpl] = DIARY_MSG[$code];
+    $d = (string) ($_GET['day'] ?? '');
+    $text = str_contains($tpl, '%s')
+        ? sprintf($tpl, diary_valid_day($d) ? $d : '—')
+        : $tpl;
+    if ($kind === 'ok') { $msg = $text; } else { $err = $text; }
+}
 
 try {
     $pdo = fav_open(true);
@@ -22,38 +55,41 @@ try {
     exit('<!DOCTYPE html><meta charset="UTF-8"><title>Diario non disponibile</title><p>Diario non disponibile. Riprova tra qualche minuto.');
 }
 
-// --- Azioni admin (POST) ---------------------------------------------------
+// --- Azioni di gestione (POST) ---------------------------------------------
+// Curare il diario (rigenerare, pubblicare, ritirare) e' riservato all'admin.
+// La sola generazione della sintesi IA segue `ai_min_role`, che la
+// configurazione permette di abbassare a 'collaboratore': il controllo fine
+// e' dentro il ramo 'narrative'.
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    if (!$is_admin) {
-        http_response_code(403);
-        exit('403');
+    $act  = (string) ($_POST['action'] ?? '');
+    $day  = (string) ($_POST['day'] ?? '');
+    $min  = ($act === 'narrative') ? ai_min_role() : 'admin';
+    if ((ROLE_RANK[current_role()] ?? 0) < (ROLE_RANK[$min] ?? 99)) {
+        require_role($min);   // redirect al login se anonimo, 403 se insufficiente
     }
-    $day = (string) ($_POST['day'] ?? '');
-    $act = (string) ($_POST['action'] ?? '');
+    $code = '';
     if (!csrf_check()) {
-        $err = 'Sessione scaduta, ricarica la pagina.';
+        $code = 'csrf';
     } elseif (!diary_valid_day($day)) {
-        $err = 'Data non valida.';
+        $code = 'badday';
     } else {
         try {
             if ($act === 'refresh') {
                 diary_store_digest($pdo, $day, diary_build_digest($pdo, $day));
-                $msg = "Digest del $day rigenerato.";
+                $code = 'refreshed';
             } elseif ($act === 'publish') {
                 diary_ensure_day($pdo, $day);
                 $now = gmdate('Y-m-d H:i:s') . ' UTC';
                 $pdo->prepare("UPDATE diary_days SET published = 1, published_at = ?, updated_at = ? WHERE day = ?")
                     ->execute([$now, $now, $day]);
-                $msg = "Voce del $day pubblicata nel diario.";
+                $code = 'published';
             } elseif ($act === 'unpublish') {
                 $pdo->prepare("UPDATE diary_days SET published = 0, updated_at = ? WHERE day = ?")
                     ->execute([gmdate('Y-m-d H:i:s') . ' UTC', $day]);
-                $msg = "Voce del $day ritirata dal diario pubblico.";
+                $code = 'unpublished';
             } elseif ($act === 'narrative') {
-                if (ROLE_RANK[current_role()] < (ROLE_RANK[ai_min_role()] ?? 99)) {
-                    $err = 'Permessi insufficienti per la sintesi IA.';
-                } elseif (!ai_enabled()) {
-                    $err = 'Assistente IA non configurato.';
+                if (!ai_enabled()) {
+                    $code = 'noai';
                 } else {
                     @set_time_limit(0);
                     ignore_user_abort(true);
@@ -61,7 +97,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $digest = json_decode($r['digest_json'], true) ?: [];
                     $res = ai_generate($digest);
                     if (!$res['ok']) {
-                        $err = 'Sintesi non generata: ' . $res['error'];
+                        error_log('diary.php narrative: ' . $res['error']);
+                        $code = 'aifail';
                     } else {
                         $pdo->prepare(
                             "UPDATE diary_days SET narrative_md = ?, narrative_model = ?,
@@ -70,36 +107,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             $res['text'], $res['model'],
                             gmdate('Y-m-d H:i:s') . ' UTC', gmdate('Y-m-d H:i:s') . ' UTC', $day,
                         ]);
-                        $extra = !empty($res['stats']['seconds']) ? " ({$res['stats']['seconds']}s)" : '';
-                        $msg = "Sintesi IA generata per il $day{$extra}. Rileggila prima di pubblicare.";
+                        $code = 'narrated';
                     }
                 }
             } elseif ($act === 'narrative_save') {
                 $txt = trim((string) ($_POST['narrative_md'] ?? ''));
                 $pdo->prepare("UPDATE diary_days SET narrative_md = ?, updated_at = ? WHERE day = ?")
                     ->execute([$txt !== '' ? $txt : null, gmdate('Y-m-d H:i:s') . ' UTC', $day]);
-                $msg = $txt !== '' ? "Testo della sintesi del $day salvato." : "Sintesi del $day svuotata.";
+                $code = $txt !== '' ? 'narr_saved' : 'narr_empty';
             } elseif ($act === 'narrative_clear') {
                 $pdo->prepare("UPDATE diary_days SET narrative_md = NULL, narrative_model = NULL,
                                narrative_generated_at = NULL, updated_at = ? WHERE day = ?")
                     ->execute([gmdate('Y-m-d H:i:s') . ' UTC', $day]);
-                $msg = "Sintesi IA del $day eliminata.";
+                $code = 'narr_clear';
             } else {
-                $err = 'Azione sconosciuta.';
+                $code = 'badaction';
             }
         } catch (Throwable $e) {
             error_log('diary.php action: ' . $e->getMessage());
-            $err = 'Operazione non riuscita.';
+            $code = 'failed';
         }
     }
-    $q = 'diary.php';
+    // Redirect PRG: viaggia solo il codice dell'esito, mai il testo (vedi DIARY_MSG).
+    $q = 'diary.php?';
     if (diary_valid_day($day)) {
-        $q .= '?day=' . urlencode($day);
-        $q .= ($msg ? '&m=' : '&e=') . urlencode($msg ?: $err);
-    } else {
-        $q .= '?' . ($msg ? 'm=' : 'e=') . urlencode($msg ?: $err);
+        $q .= 'day=' . urlencode($day) . '&';
     }
-    header('Location: ' . $q);
+    header('Location: ' . $q . 'm=' . urlencode($code));
     exit;
 }
 
@@ -275,8 +309,13 @@ $page_title = $detail ? ('Diario · ' . d_day_it($day)) : 'Diario di bordo';
         <?php endif; ?>
     </p>
 
-    <?php if ($is_admin): $has_narr = !empty($row['narrative_md']); ?>
+    <?php
+    // La sintesi IA puo' essere aperta ai collaboratori via `ai_min_role`;
+    // pubblicare e ritirare restano dell'admin.
+    $can_ai = (ROLE_RANK[current_role()] ?? 0) >= (ROLE_RANK[ai_min_role()] ?? 99);
+    if ($is_admin || $can_ai): $has_narr = !empty($row['narrative_md']); ?>
     <div class="diary-admin">
+        <?php if ($is_admin): ?>
         <form method="post" action="diary.php">
             <?= csrf_field() ?>
             <input type="hidden" name="day" value="<?= d_h($day) ?>">
@@ -289,8 +328,9 @@ $page_title = $detail ? ('Diario · ' . d_day_it($day)) : 'Diario di bordo';
                         onclick="return confirm('Pubblicare la voce del <?= d_h($day) ?> nel diario pubblico?')">Pubblica nel diario</button>
             <?php endif; ?>
         </form>
+        <?php endif; ?>
 
-        <?php if (ai_enabled()): ?>
+        <?php if ($can_ai && ai_enabled()): ?>
         <hr>
         <form method="post" action="diary.php" class="ai-gen"
               onsubmit="var b=this.querySelector('button');b.textContent='Generazione in corso… (può richiedere qualche minuto)';b.disabled=true;">
@@ -320,19 +360,20 @@ $page_title = $detail ? ('Diario · ' . d_day_it($day)) : 'Diario di bordo';
             </div>
         </form>
         <?php endif; ?>
-        <?php else: ?>
+        <?php elseif ($can_ai): ?>
         <p class="muted">Assistente IA non configurato (<code>ai_base_url</code> in <code>config.php</code>).</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 
     <?php
-    $show_narr = !empty($row['narrative_md']) && ((int) $row['published'] === 1 || $is_admin);
+    $show_narr = !empty($row['narrative_md'])
+                 && ((int) $row['published'] === 1 || $is_admin || $can_ai);
     if ($show_narr):
         $pub = (int) $row['published'] === 1;
     ?>
     <div class="diary-narrative">
-        <?php if ($is_admin && !$pub): ?><p class="ai-note" style="border:0;margin:0 0 8px;padding:0;"><strong>Anteprima bozza</strong> — non ancora visibile al pubblico.</p><?php endif; ?>
+        <?php if (!$pub && ($is_admin || $can_ai)): ?><p class="ai-note" style="border:0;margin:0 0 8px;padding:0;"><strong>Anteprima bozza</strong> — non ancora visibile al pubblico.</p><?php endif; ?>
         <?= diary_md_to_html($row['narrative_md']) ?>
         <p class="ai-note">Sintesi redatta con assistenza IA locale<?= $row['narrative_model'] ? ' (' . d_h($row['narrative_model']) . ')' : '' ?> e rivista da un operatore. I dati di riferimento sono il digest qui sotto: verificare sempre sui record citati.</p>
     </div>

@@ -11,6 +11,26 @@ $msg = '';
 $err = '';
 const ROLES = ['collaboratore', 'admin'];
 
+/**
+ * Traccia nel log di sistema chi ha cambiato cosa fra gli account. Gli accessi
+ * sono gia' in login_attempts, ma creazioni, cambi di ruolo, reset password ed
+ * eliminazioni non lasciavano alcuna traccia: su un portale con piu' di un
+ * collaboratore, e' l'unico modo per ricostruire un "chi ha fatto questo".
+ */
+function admin_audit(string $azione, string $bersaglio, string $extra = ''): void {
+    $who = current_user()['username'] ?? '?';
+    $ip  = $_SERVER['REMOTE_ADDR'] ?? '-';
+    error_log(sprintf('flight_anom AUDIT: %s (%s) %s -> %s%s',
+        $who, $ip, $azione, $bersaglio, $extra !== '' ? " [$extra]" : ''));
+}
+
+/** Username di un id, per rendere leggibile il log. */
+function admin_username(PDO $db, int $id): string {
+    $s = $db->prepare("SELECT username FROM users WHERE id = ?");
+    $s->execute([$id]);
+    return (string) ($s->fetchColumn() ?: "id=$id");
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!csrf_check()) {
         $err = 'Sessione scaduta, ricarica la pagina.';
@@ -33,6 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 } else {
                     $db->prepare("INSERT INTO users (username, password_hash, role) VALUES (?,?,?)")
                        ->execute([$u, password_hash($p, PASSWORD_DEFAULT), $r]);
+                    admin_audit('crea utente', $u, $r);
                     $msg = "Utente “{$u}” creato ({$r}).";
                 }
             } elseif ($act === 'setrole') {
@@ -46,6 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $err = 'Deve restare almeno un amministratore.';
                 } else {
                     $db->prepare("UPDATE users SET role=? WHERE id=?")->execute([$r, $id]);
+                    admin_audit('cambia ruolo', admin_username($db, $id), "nuovo ruolo: $r");
                     $msg = 'Ruolo aggiornato.';
                 }
             } elseif ($act === 'resetpw') {
@@ -54,6 +76,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 if (strlen($p) < 8) {
                     $err = 'Password troppo corta (minimo 8).';
                 } else {
+                    admin_audit('reset password', admin_username($db, $id));
                     $db->prepare("UPDATE users SET password_hash=? WHERE id=?")
                        ->execute([password_hash($p, PASSWORD_DEFAULT), $id]);
                     $msg = 'Password reimpostata.';
@@ -65,6 +88,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 } elseif (user_is_admin($db, $id) && admin_user_count($db) <= 1) {
                     $err = 'Deve restare almeno un amministratore.';
                 } else {
+                    admin_audit('ELIMINA utente', admin_username($db, $id));
                     $db->prepare("DELETE FROM users WHERE id=?")->execute([$id]);
                     $msg = 'Utente eliminato.';
                 }
@@ -84,6 +108,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 } else {
                     $db->prepare("UPDATE users SET password_hash=? WHERE id=?")
                        ->execute([password_hash($p, PASSWORD_DEFAULT), (int) $me['id']]);
+                    admin_audit('cambia la propria password', $me['username']);
                     $msg = 'La tua password è stata aggiornata.';
                 }
             }

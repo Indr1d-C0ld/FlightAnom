@@ -1019,13 +1019,16 @@ def episode_upsert(conn, episodes: dict, key, now_ts: float, now_str: str,
     operator = operator_from_callsign(ac.flight)
     ep = episodes.get(key)
     if ep and now_ts - ep["last_ts"] <= episode_gap_s:
+        # `hex` e' incluso nell'UPDATE: se per qualunque motivo l'aeromobile
+        # descritto dall'episodio cambiasse, la riga resta comunque coerente
+        # (hex, callsign, reg e traccia sempre dello stesso mezzo).
         conn.execute("""
-            UPDATE events SET last_seen_utc=?, lat=?, lon=?, alt_baro=?, gs=?, squawk=?,
+            UPDATE events SET last_seen_utc=?, hex=?, lat=?, lon=?, alt_baro=?, gs=?, squawk=?,
                    callsign=?, reg=?, model_t=?, is_mil=?, note=?, confidence=?, laps=?,
                    duration_s=?, updates=updates+1, track_points=?, near_airport=?,
                    country=?, operator=?
             WHERE id=?
-        """, (now_str, ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk,
+        """, (now_str, ac.hex, ac.lat, ac.lon, ac.alt_baro, ac.gs, ac.squawk,
               ac.flight, ac.reg, ac.model_t, 1 if ac.is_mil else 0, note, confidence,
               laps, dur, tj, near_flag, country, operator, ep["id"]))
         conn.commit()
@@ -1050,6 +1053,16 @@ def episode_upsert(conn, episodes: dict, key, now_ts: float, now_str: str,
 # ---------------------------
 # Parsing aeromobile
 # ---------------------------
+def _clean(val, maxlen: int) -> str:
+    """Campo testuale da sorgente esterna: niente caratteri di controllo, niente
+    lunghezze impreviste. I valori reali (hex 6, callsign 8, reg ~10, tipo 4)
+    stanno ampiamente nei limiti; l'API pero' e' di terze parti e questi campi
+    finiscono nel database e poi nelle pagine."""
+    s = str(val or "").strip()
+    s = "".join(ch for ch in s if ch.isprintable())
+    return s[:maxlen]
+
+
 def parse_aircraft(raw: dict) -> Optional[Aircraft]:
     try:
         df = raw.get("dbFlags")
@@ -1058,17 +1071,17 @@ def parse_aircraft(raw: dict) -> Optional[Aircraft]:
         df = 0
     try:
         return Aircraft(
-            hex=(raw.get("hex") or "").lower(),
-            flight=(raw.get("flight") or "").strip(),
+            hex=_clean(raw.get("hex"), 12).lower(),
+            flight=_clean(raw.get("flight"), 16),
             lat=safe_float(raw.get("lat")),
             lon=safe_float(raw.get("lon")),
             alt_baro=safe_int(raw.get("alt_baro")),
             gs=safe_float(raw.get("gs")),
             ts=safe_float(raw.get("seen_pos_timestamp") or raw.get("seen_pos") or raw.get("seen")),
-            reg=(raw.get("r") or raw.get("reg") or "").strip() or None,
-            squawk=str(raw.get("squawk")).strip() if raw.get("squawk") else None,
+            reg=_clean(raw.get("r") or raw.get("reg"), 16) or None,
+            squawk=_clean(raw.get("squawk"), 8) or None,
             ground=safe_bool(raw.get("ground")),
-            model_t=(raw.get("t") or None),
+            model_t=_clean(raw.get("t"), 8) or None,
             dbflags=df,
         )
     except Exception:
@@ -1281,9 +1294,18 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main():
-    args, _unknown = build_argparser().parse_known_args()
+    args, unknown = build_argparser().parse_known_args()
     global GRID_MIN_SELFX
     GRID_MIN_SELFX = args.grid_min_selfx
+    # parse_known_args() tollera gli argomenti di versioni precedenti (la unit
+    # systemd puo' essere piu' vecchia del codice), ma ignorarli in silenzio fa
+    # credere di star regolando il rilevatore quando non e' cosi': un refuso in
+    # un parametro vero finirebbe qui senza un segnale. Meglio dirlo.
+    opts = [a for a in unknown if a.startswith("-")]
+    if opts:
+        print(f"[WARN] {len(opts)} argomenti sconosciuti IGNORATI: {' '.join(opts)}",
+              file=sys.stderr)
+        print("[WARN] Non hanno alcun effetto. Parametri validi: --help.", file=sys.stderr)
     if args.selftest:
         sys.exit(selftest())
     if not args.polygons_file:
@@ -1454,7 +1476,14 @@ def main():
                 if now_ts - last_prox_alert.get(ckey, 0) < args.prox_cooldown:
                     continue
 
-                lead, trail = ac1, ac2
+                # L'episodio e' indicizzato su un frozenset (indipendente
+                # dall'ordine), ma l'ordine di enumerazione di `aircraft` cambia
+                # fra un ciclo e l'altro: se `lead` seguisse quell'ordine, la
+                # stessa riga verrebbe riscritta ora con i dati di uno ora con
+                # quelli dell'altro, mentre `hex` resta quello dell'INSERT ->
+                # righe contraddittorie (hex di A, callsign di B, peer = A).
+                # Ordine deterministico: l'episodio descrive sempre lo stesso.
+                lead, trail = (ac1, ac2) if ac1.hex <= ac2.hex else (ac2, ac1)
                 near_flag = 0
                 if airports:
                     apt, dkm = nearest_airport(lead.lat, lead.lon, airports)
@@ -1468,7 +1497,7 @@ def main():
                 conf = 0.45 + (0.25 if mil_pair else 0.0) + (0.15 if label == "INSEGUIMENTO" else 0.0)
                 note = (f"{label}; peer={trail.hex} {trail.flight or ''}; dist={dist:.1f} km; "
                         f"conf={conf:.2f}" + ("; mil" if mil_pair else ""))
-                seg = list(tracks[ac1.hex]) or [TP(ac1.lat, ac1.lon, ac1.alt_baro, ac1.gs, now_ts)]
+                seg = list(tracks[lead.hex]) or [TP(lead.lat, lead.lon, lead.alt_baro, lead.gs, now_ts)]
                 key = (pkey, "PROX", label)
                 _eid, is_new = episode_upsert(conn, episodes, key, now_ts, now_str, lead,
                                               "PROX", label, note, conf, None, seg,
@@ -1480,6 +1509,12 @@ def main():
         # streak azzerato per le coppie non piu' vicine
         for pk in [p for p in prox_streak if p not in pairs_now]:
             prox_streak.pop(pk, None)
+
+        # cooldown delle coppie ormai scadute: senza potatura questa mappa
+        # cresce per tutta la vita del processo (una voce per ogni coppia mai
+        # segnalata), che per un demone con Restart=always significa mesi.
+        for ck in [c for c, t in last_prox_alert.items() if now_ts - t > args.prox_cooldown * 4]:
+            last_prox_alert.pop(ck, None)
 
         # --- ANOMALIE ---
         for ac in aircraft:

@@ -20,14 +20,19 @@ if (PHP_SAPI !== 'cli') {
 require_once __DIR__ . '/favorites_lib.php';
 require_once __DIR__ . '/diary_lib.php';
 
-$opts = getopt('', ['publish', 'quiet', 'day:', 'backfill:', 'help']);
+$opts = getopt('', ['publish', 'quiet', 'day:', 'backfill:', 'min-events:', 'help']);
 if (isset($opts['help'])) {
-    fwrite(STDOUT, "Uso: php diary_build.php [--publish] [--day=YYYY-MM-DD] [--backfill=N] [--quiet]\n");
+    fwrite(STDOUT, "Uso: php diary_build.php [--publish] [--day=YYYY-MM-DD] [--backfill=N]"
+                 . " [--min-events=N] [--quiet]\n");
     exit(0);
 }
 
 $do_publish = isset($opts['publish']);
 $quiet      = isset($opts['quiet']);
+// Un giorno senza eventi non e' una voce di diario: e' un buco nei dati (monitor
+// fermo, database appena azzerato, backfill oltre l'inizio dello storico).
+// Il digest viene comunque calcolato e salvato, ma non pubblicato.
+$min_events = isset($opts['min-events']) ? max(0, (int) $opts['min-events']) : 1;
 $log = function (string $s) use ($quiet): void {
     if (!$quiet) {
         fwrite(STDOUT, $s . "\n");
@@ -82,6 +87,8 @@ foreach ($days as $day) {
                 $note = 'gia\' pubblicato';
             } elseif (!empty($row['published_at'])) {
                 $note = 'ritirato a mano: lasciato non pubblico';
+            } elseif ($n < $min_events) {
+                $note = sprintf('%d eventi (< %d): non pubblicato', $n, $min_events);
             } else {
                 $now = gmdate('Y-m-d H:i:s') . ' UTC';
                 $pdo->prepare("UPDATE diary_days SET published = 1, published_at = ?, updated_at = ? WHERE day = ?")

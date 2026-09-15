@@ -29,6 +29,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     try {
         $pdo = fav_open(true);
         fav_ensure_schema($pdo);
+        // L'evento deve esistere: senza questo controllo un id qualsiasi crea
+        // una riga in favorites che la JOIN di favorites.php scarta, cioe' una
+        // nota invisibile e non piu' cancellabile dall'interfaccia.
+        $chk = $pdo->prepare("SELECT 1 FROM events WHERE id = ?");
+        $chk->execute([$id]);
+        if (!$chk->fetchColumn()) {
+            http_response_code(404);
+            echo 'Evento inesistente.';
+            exit;
+        }
         // upsert: la nota si puo' salvare anche se l'evento non era ancora tra i preferiti
         $pdo->prepare("INSERT INTO favorites (event_id, note) VALUES (?, ?)
                        ON CONFLICT(event_id) DO UPDATE SET note = excluded.note")

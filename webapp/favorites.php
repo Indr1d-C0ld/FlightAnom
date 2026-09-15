@@ -67,7 +67,9 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <?php if ($can_edit): /* solo per chi puo' scrivere: vedi auth_bootstrap() */ ?>
     <meta name="csrf-token" content="<?= htmlspecialchars(csrf_token()) ?>">
+    <?php endif; ?>
     <title>Eventi preferiti — Flight Anomaly Monitor</title>
     <link rel="stylesheet" href="assets/style.css">
     <style>
@@ -150,11 +152,12 @@ function fav_sort_link(string $col, string $label, string $sort, string $order, 
 </div>
 
 <script>
-const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+const CSRF_META = document.querySelector('meta[name="csrf-token"]');
+const CSRF = CSRF_META ? CSRF_META.content : '';
 
 document.addEventListener('click', e => {
     const el = e.target.closest('.fav-btn');
-    if (!el) return;
+    if (!el || !CSRF) return;
     e.preventDefault();
     const id = el.dataset.id;
     if (!confirm('Rimuovere l\'evento #' + id + ' dai preferiti?')) return;

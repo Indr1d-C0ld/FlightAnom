@@ -5,6 +5,72 @@
 _Progetto in revisione finale: motore di detection, portale ed ecosistema di
 accesso sono completi; da qui in avanti solo correzioni e rifiniture._
 
+### Audit completo della piattaforma — correzioni
+
+Revisione riga per riga di webapp e demone. Nessuna SQL injection trovata, ma
+diversi difetti reali, tutti riprodotti su dati di produzione prima di correggerli.
+
+**Demone**
+- **Argomenti ignorati in silenzio.** `main()` usa `parse_known_args()`: gli
+  argomenti di versioni precedenti finivano nel nulla senza alcun segnale, e la
+  stessa sorte toccava a un refuso in un parametro valido. Ora all'avvio li
+  elenca su stderr dichiarando che non hanno effetto. Nota per chi aggiorna:
+  controllare che la propria unit systemd usi i parametri *correnti*
+  (`deploy/flight-anom.service.sample`) — quelli del motore pre-riscrittura non
+  regolano piu' nulla.
+- **Eventi PROX con identita' mescolata.** L'episodio e' indicizzato su un
+  `frozenset` (giusto), ma `lead`/`trail` seguivano l'ordine di enumerazione,
+  che cambia a ogni ciclo: la riga veniva riscritta ora con i dati di un
+  aeromobile ora con quelli dell'altro mentre `hex` restava quello dell'INSERT,
+  producendo righe in cui il peer coincideva con il soggetto. Ora l'ordine e'
+  deterministico (hex piu' basso) e `episode_upsert` aggiorna anche `hex`.
+- `last_prox_alert` non veniva mai potato: cresceva per tutta la vita del
+  processo (con `Restart=always`, mesi).
+- Campi testuali dal feed ADS-B (`hex`, `flight`, `reg`, `squawk`, `t`) ora
+  normalizzati: caratteri non stampabili rimossi e lunghezza limitata.
+
+**Webapp**
+- **Sessioni mai raccolte.** Il portale e' pubblico, ma `auth_bootstrap()`
+  avviava una sessione a ogni richiesta: ogni visitatore senza cookie lasciava
+  un file che nessuno rimuoveva (Debian imposta `gc_probability=0` e pulisce
+  solo il save_path di sistema, non quello della webapp). Ora la sessione parte
+  solo quando serve — cookie presente, richiesta POST, o `auth_bootstrap(true)`
+  — e il GC di PHP viene riattivato sul save_path della webapp. Il `<meta
+  csrf-token>` e' emesso solo per gli utenti autenticati.
+- **`_` e `%` erano jolly SQL in tutti i filtri**: cercare `RYR___` restituiva
+  ogni callsign con RYR piu' tre caratteri. Nuova `fa_like_term()` + `ESCAPE`.
+- **Banner arbitrario sulla pagina pubblica del diario**: gli esiti viaggiavano
+  come testo libero in querystring, quindi era possibile linkare `diary.php` con
+  un messaggio a piacere nel banner di successo. Ora passa solo un codice.
+- **Popup della mappa**: `bindPopup()` inserisce come innerHTML e i campi
+  venivano concatenati come stringa HTML. Ricostruito con `textContent`.
+- **Deny list `.htaccess` allineata**: includeva solo i primi file di include.
+  Ora copre anche `ai_lib.php`, `diary_lib.php`, `config.sample.php` e gli
+  artefatti di deployment (`*.service`, `*.sh`, `*.sample`, `*.log`…), che
+  rivelavano percorsi, utente di esecuzione e argomenti del demone.
+- `img-src` del CSP d'esempio puntava ancora ai tile OpenStreetMap: aggiornato
+  al fornitore attuale (la mappa sarebbe restata bianca).
+- **`ai_min_role` era configurazione morta**: `diary.php` imponeva comunque
+  `admin` su ogni POST. Ora la sola generazione della sintesi segue davvero il
+  ruolo configurato; pubblicare e ritirare restano dell'admin.
+- **`api/events.php` era fermo allo schema pre-riscrittura**: non restituiva
+  `subtype`, `confidence`, `is_mil`, `laps`, `duration_s`, `country`,
+  `operator`, `last_seen_utc`, e filtrava solo per hex/callsign/date. Allineato
+  a `index.php` (piu' `min_conf` e `mil`), con guardia sul database assente.
+- **`diary_build.php` pubblicava anche i giorni a zero eventi**, riempiendo il
+  diario pubblico di voci vuote quando il backfill supera l'inizio dello
+  storico. Nuovo `--min-events` (default 1); il digest viene comunque calcolato.
+- `view.php` non aveva `<meta viewport>`: le sue media query non scattavano su
+  smartphone.
+- `login_attempts` non veniva mai potato (ora finestra di 7 giorni).
+- `edit_favorite.php` accettava un `event_id` inesistente, creando note
+  invisibili e non cancellabili dall'interfaccia.
+- Il filtro "Solo preferiti" costruiva un placeholder per preferito: oltre il
+  tetto di variabili di SQLite avrebbe smesso di funzionare. Ora sottoquery.
+- **Tracciamento delle azioni admin** (`admin_users.php`): creazione, cambio
+  ruolo, reset password, eliminazione e cambio password proprio finiscono nel
+  log con utente, IP e bersaglio. Prima non restava traccia di nulla.
+
 ### Diario di bordo
 - **`diary.php` + `diary_lib.php`**: sezione "Diario di bordo" con una sintesi
   per giorno (fuso Europe/Rome). Il **digest** è deterministico (solo SQL):
