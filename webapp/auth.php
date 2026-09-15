@@ -78,6 +78,15 @@ function auth_bootstrap(bool $force = false): void {
         }
         return;
     }
+    // Nome di sessione dedicato. Va impostato PRIMA della guardia qui sotto:
+    // quella cerca il cookie con session_name(), e finche' il nome e' ancora
+    // il PHPSESSID di default non troverebbe mai il cookie di un utente
+    // autenticato, trattandolo come anonimo su ogni GET.
+    // Serve un nome proprio perche' col PHPSESSID di default e path '/' le app
+    // che convivono su questo host condividono un unico cookie: ognuna rigenera
+    // l'id al login, quindi accedere a una disconnetteva le altre.
+    session_name('FLIGHTANOMSESSID');
+
     if (!$force
         && !isset($_COOKIE[session_name()])
         && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
@@ -98,10 +107,6 @@ function auth_bootstrap(bool $force = false): void {
         ini_set('session.gc_divisor', '100');
         ini_set('session.gc_maxlifetime', '86400');   // 24 h
     }
-    // Nome di sessione dedicato: con il PHPSESSID di default e path '/', le app
-    // che convivono su questo host condividono un unico cookie. Poiche' ognuna
-    // rigenera l'id al login, accedere a una disconnetteva le altre.
-    session_name('FLIGHTANOMSESSID');
     session_set_cookie_params([
         'lifetime' => 0, 'path' => '/',
         'secure' => !empty($_SERVER['HTTPS']),
