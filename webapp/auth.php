@@ -98,6 +98,10 @@ function auth_bootstrap(bool $force = false): void {
         ini_set('session.gc_divisor', '100');
         ini_set('session.gc_maxlifetime', '86400');   // 24 h
     }
+    // Nome di sessione dedicato: con il PHPSESSID di default e path '/', le app
+    // che convivono su questo host condividono un unico cookie. Poiche' ognuna
+    // rigenera l'id al login, accedere a una disconnetteva le altre.
+    session_name('FLIGHTANOMSESSID');
     session_set_cookie_params([
         'lifetime' => 0, 'path' => '/',
         'secure' => !empty($_SERVER['HTTPS']),
