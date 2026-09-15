@@ -1063,6 +1063,31 @@ def _clean(val, maxlen: int) -> str:
     return s[:maxlen]
 
 
+def _completeness(a: "Aircraft") -> int:
+    """Quanti campi utili porta questa copia del contatto."""
+    return sum(1 for v in (a.alt_baro, a.gs, a.reg, a.model_t, a.squawk, a.flight or None)
+               if v is not None)
+
+
+def dedup_by_hex(aircraft: List["Aircraft"]) -> List["Aircraft"]:
+    """Una sola voce per aeromobile e per ciclo.
+
+    Le tile di copertura si sovrappongono, quindi lo stesso contatto arriva da
+    piu' tile. Senza deduplica ogni copia aggiungeva un punto alla traccia con
+    lo STESSO timestamp: storage gonfiato (misurato 1.65x medio, fino a 5x),
+    finestra di osservazione molto piu' corta di quanto dica --track-maxlen
+    (300 punti = ~80 minuti reali invece di 300), soglie 'min_points' dei
+    classificatori superate con un quinto delle posizioni reali, e il pattern
+    riclassificato N volte per ciclo. Fra le copie si tiene la piu' completa.
+    """
+    best: Dict[str, "Aircraft"] = {}
+    for a in aircraft:
+        prev = best.get(a.hex)
+        if prev is None or _completeness(a) > _completeness(prev):
+            best[a.hex] = a
+    return list(best.values())
+
+
 def parse_aircraft(raw: dict) -> Optional[Aircraft]:
     try:
         df = raw.get("dbFlags")
@@ -1280,7 +1305,12 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="buco temporale che apre un nuovo segmento di traccia")
     ap.add_argument("--episode-gap-s", type=float, default=1200.0,
                     help="silenzio oltre il quale un episodio si considera chiuso")
-    ap.add_argument("--track-maxlen", type=int, default=300)
+    # Con la deduplica per ciclo, 1 punto = 1 intervallo: a --interval 60 questo
+    # e' il numero di MINUTI di traccia conservati per aeromobile. 180 copre la
+    # durata massima osservata sui dati reali (156 min) senza troncare nulla;
+    # scendere sotto non fa risparmiare quasi niente (le tracce lunghe sono
+    # poche) ma inizia a tagliare gli episodi piu' interessanti.
+    ap.add_argument("--track-maxlen", type=int, default=180)
     ap.add_argument("--prune-idle-s", type=float, default=1800.0)
     ap.add_argument("--proximity-km", type=float, default=2.5)
     ap.add_argument("--prox_angle_deg", type=float, default=15.0)
@@ -1342,6 +1372,7 @@ def main():
             a = parse_aircraft(raw)
             if a and a.lat is not None and a.lon is not None:
                 aircraft.append(a)
+        aircraft = dedup_by_hex(aircraft)
         if polygons:
             aircraft = [ac for ac in aircraft if in_any_polygon(ac.lat, ac.lon, polygons)]
 

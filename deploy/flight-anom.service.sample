@@ -25,7 +25,7 @@ ExecStart=/opt/flight_anom/monitor/venv/bin/python3 /opt/flight_anom/monitor/fli
     --segment-gap-s 600 \
     --episode-gap-s 1200 \
     --prune-idle-s 1800 \
-    --track-maxlen 300 \
+    --track-maxlen 180 \
     --proximity-km 2.5 \
     --prox_angle_deg 15.0 \
     --prox_alt_diff_ft 400.0 \
